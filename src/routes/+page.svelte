@@ -8,19 +8,18 @@
 		isCompleteLatexDocument,
 		compileToHTML
 	} from '$lib/helper.js';
-	import { parse } from '$lib/processFile.js';
-	import { ascii2Braille, braille2Ascii } from '$lib/brailleMap.js';
+	import { parse, configure, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
 	import liblouis from 'liblouis/easy-api';
 
 	import { base } from '$app/paths';
 
 	// Use liblouis 3.2.0-rc with tables embedded (fixes production gzip issues)
- 	const normalizedBase = base === '/' ? '' : base;
- 	const capi_url = `.${normalizedBase}/liblouis/build-tables-embeded-root-utf16.js`;
- 	const easyapi_url = `.${normalizedBase}/liblouis/easy-api.js`;
-	console.log(liblouis);
-	console.log(capi_url);
-	console.log(easyapi_url);
+	const normalizedBase = base === '/' ? '' : base;
+	const capi_url = `.${normalizedBase}/liblouis/build-tables-embeded-root-utf16.js`;
+	const easyapi_url = `.${normalizedBase}/liblouis/easy-api.js`;
+
+	// Give the braille2latex package its liblouis URLs
+	configure({ liblouisCapiUrl: capi_url, liblouisEasyApiUrl: easyapi_url });
 
 	const brailleTables = [
 		{ value: 'en-ueb-g2.ctb', label: 'English UEB Grade 2' },

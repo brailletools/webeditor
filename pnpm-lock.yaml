@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@brailletools/braille2latex':
+        specifier: file:../braille2latex
+        version: file:../braille2latex(liblouis@0.4.0)
       latex.js:
         specifier: ^0.12.6
         version: 0.12.6
@@ -86,6 +89,11 @@ packages:
     resolution: {integrity: sha512-70vBT/Ylqpm65RQz2iCG2o0JJCEG/WCNyefTr2xcOcr1CoSee60gNQYUMZZ7YukoKkFLv26I/jjlsvwwp532oQ==}
     peerDependencies:
       playwright-core: '>= 1.0.0'
+
+  '@brailletools/braille2latex@file:../braille2latex':
+    resolution: {directory: ../braille2latex, type: directory}
+    peerDependencies:
+      liblouis: ^0.4.0
 
   '@esbuild/aix-ppc64@0.25.8':
     resolution: {integrity: sha512-urAvrUedIqEiFR3FYSLTWQgLu5tb+m0qZw0NBEasUeo6wuqatkMDaRT+1uABiGXEu5vqgPd7FGE1BhsAIy9QVA==}
@@ -1492,6 +1500,10 @@ snapshots:
     dependencies:
       axe-core: 4.11.0
       playwright-core: 1.57.0
+
+  '@brailletools/braille2latex@file:../braille2latex(liblouis@0.4.0)':
+    dependencies:
+      liblouis: 0.4.0
 
   '@esbuild/aix-ppc64@0.25.8':
     optional: true

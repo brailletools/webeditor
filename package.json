@@ -46,6 +46,7 @@
 		]
 	},
 	"dependencies": {
+		"@brailletools/braille2latex": "file:../braille2latex",
 		"latex.js": "^0.12.6"
 	}
 }
