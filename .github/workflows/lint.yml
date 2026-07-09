@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout braille2latex (local file dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: brailletools/braille2latex
+          path: ../braille2latex
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
