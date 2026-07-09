@@ -13,10 +13,11 @@
 
 	import { base } from '$app/paths';
 
-	// Use liblouis 3.2.0-rc with tables embedded (fixes production gzip issues)
-	const normalizedBase = base === '/' ? '' : base;
-	const capi_url = `.${normalizedBase}/liblouis/build-tables-embeded-root-utf16.js`;
-	const easyapi_url = `.${normalizedBase}/liblouis/easy-api.js`;
+	// Use liblouis 3.2.0-rc with tables embedded (fixes production gzip issues).
+	// base is '' in dev and '/webeditor' in production; absolute paths work in
+	// both the main thread and inside blob Workers (resolved against the origin).
+	const capi_url = `${base}/liblouis/build-tables-embeded-root-utf16.js`;
+	const easyapi_url = `${base}/liblouis/easy-api.js`;
 
 	// Give the braille2latex package its liblouis URLs
 	configure({ liblouisCapiUrl: capi_url, liblouisEasyApiUrl: easyapi_url });
