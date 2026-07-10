@@ -132,7 +132,7 @@ export async function compileToHTML(latexContent) {
 		// Create a new HtmlGenerator and use it to parse and generate HTML
 		// latex.js API: create generator, then parse with it
 		const generator = new window.latexjs.HtmlGenerator({ hyphenate: false });
-		const doc = window.latexjs.parse(browserLatex, { generator });
+		window.latexjs.parse(browserLatex, { generator });
 
 		// The parse returns a DOM node tree - we need to serialize it to HTML
 		// The generator has the htmlDocument property with the full document
@@ -212,7 +212,7 @@ export async function compileToHTML(latexContent) {
 		const revokeUrl = () => {
 			try {
 				URL.revokeObjectURL(url);
-			} catch (e) {
+			} catch {
 				// Ignore errors during revoke
 			}
 		};

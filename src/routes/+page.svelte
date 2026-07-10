@@ -36,20 +36,9 @@
 
 	// Keep braille text as state, but sync with text
 	let brailleText = $state(ascii2Braille(sample));
-	let lastBrailleText = ascii2Braille(sample);
 
 	// Track if the Worker is ready
-	let liblouisReady = $state(false);
 	let parseReady = $state(false);
-
-	// Display value: always show braille, converting ASCII to braille if needed
-	let displayBrailleText = $derived.by(() => {
-		if (containsAscii(brailleText) && !containsBraille(brailleText)) {
-			// Contains ASCII - convert to braille for display
-			return ascii2Braille(brailleText);
-		}
-		return brailleText;
-	});
 
 	// Check if a string contains braille characters (Unicode 0x2800-0x28FF range)
 	function containsBraille(str) {
@@ -94,7 +83,6 @@
 			textarea.value = newValue;
 			brailleText = newValue;
 			text = braille2Ascii(newValue);
-			lastBrailleText = newValue;
 
 			// Move cursor to after inserted character
 			textarea.setSelectionRange(start + brailleChar.length, start + brailleChar.length);
@@ -120,19 +108,16 @@
 			console.log('ASCII to Braille:', inputValue, '=>', brailleConverted);
 			brailleText = brailleConverted;
 			text = inputValue;
-			lastBrailleText = brailleConverted;
 		} else if (hasBraille) {
 			// Braille input - convert to ASCII for processing
 			const asciiConverted = braille2Ascii(inputValue);
 			console.log('Braille to ASCII:', inputValue, '=>', asciiConverted);
 			brailleText = inputValue;
 			text = asciiConverted;
-			lastBrailleText = inputValue;
 		} else {
 			// Only whitespace or empty
 			brailleText = inputValue;
 			text = inputValue;
-			lastBrailleText = inputValue;
 		}
 	}
 
@@ -160,161 +145,6 @@
 		}
 	});
 
-	// Convert ASCII braille notation to Unicode braille
-	function convertAsciBrailleToUnicode(asciBraille, table) {
-		return new Promise((resolve) => {
-			let attempt = 0;
-			const maxAttempts = 2;
-
-			console.log('[convertAsciBrailleToUnicode] ========== START ==========');
-			console.log('[convertAsciBrailleToUnicode] Input length:', asciBraille.length);
-			console.log('[convertAsciBrailleToUnicode] Input (JSON):', JSON.stringify(asciBraille));
-
-			const attemptTranslate = () => {
-				attempt++;
-				try {
-					console.log(
-						`[convertAsciBrailleToUnicode] Attempt ${attempt}. Input:`,
-						asciBraille.substring(0, 100)
-					);
-
-					let resolved = false;
-					const callbackId = Math.random();
-					console.log(
-						`[convertAsciBrailleToUnicode] Attempt ${attempt} registered callback ID: ${callbackId}`
-					);
-
-					const timeout = setTimeout(() => {
-						if (!resolved) {
-							console.warn(
-								`[convertAsciBrailleToUnicode] Attempt ${attempt} TIMEOUT - callback ${callbackId} was never invoked after 5s`
-							);
-							resolved = true;
-
-							// Retry once after a delay if we haven't hit max attempts
-							if (attempt < maxAttempts) {
-								console.log(
-									`[convertAsciBrailleToUnicode] Retrying attempt ${attempt + 1} after 500ms delay...`
-								);
-								setTimeout(attemptTranslate, 500);
-							} else {
-								console.warn(
-									`[convertAsciBrailleToUnicode] Max attempts reached, falling back to original input`
-								);
-								console.log(
-									'[convertAsciBrailleToUnicode] Fallback return (JSON):',
-									JSON.stringify(asciBraille)
-								);
-								resolve(asciBraille);
-							}
-						}
-					}, 5000);
-
-					// Wait for Worker to be ready if needed
-					const tryTranslate = () => {
-						if (!liblouisReady) {
-							console.log(
-								`[convertAsciBrailleToUnicode] Attempt ${attempt} waiting for liblouisReady...`
-							);
-							setTimeout(tryTranslate, 100);
-							return;
-						}
-
-						console.log(
-							`[convertAsciBrailleToUnicode] Attempt ${attempt} liblouis is ready, calling translateString...`
-						);
-						try {
-							// Ensure unicode.dis is included in table specification
-							const fullTable = table.includes('unicode.dis') ? table : `unicode.dis,${table}`;
-							console.log(
-								`[convertAsciBrailleToUnicode] Attempt ${attempt} using table: ${fullTable}`
-							);
-
-							asyncLiblouis.translateString(fullTable, asciBraille, function (result) {
-								console.log(
-									`[convertAsciBrailleToUnicode] Attempt ${attempt} callback ${callbackId} INVOKED`
-								);
-								console.log(
-									`[convertAsciBrailleToUnicode] Attempt ${attempt} result type: ${typeof result}`
-								);
-								console.log(
-									`[convertAsciBrailleToUnicode] Attempt ${attempt} result is null/undefined: ${result == null}`
-								);
-								if (result) {
-									console.log(
-										`[convertAsciBrailleToUnicode] Attempt ${attempt} result length: ${result.length}`
-									);
-									console.log(
-										`[convertAsciBrailleToUnicode] Attempt ${attempt} result (JSON): ${JSON.stringify(result.substring(0, 100))}`
-									);
-								}
-								if (!resolved) {
-									resolved = true;
-									clearTimeout(timeout);
-									if (result) {
-										console.log(
-											`[convertAsciBrailleToUnicode] Attempt ${attempt} SUCCESS - resolving with result`
-										);
-										console.log(
-											`[convertAsciBrailleToUnicode] Full result (JSON): ${JSON.stringify(result)}`
-										);
-										resolve(result);
-									} else {
-										console.warn(
-											`[convertAsciBrailleToUnicode] Attempt ${attempt} no result returned, falling back`
-										);
-										resolve(asciBraille);
-									}
-								} else {
-									console.warn(
-										`[convertAsciBrailleToUnicode] Attempt ${attempt} callback arrived after resolution`
-									);
-								}
-							});
-							console.log(
-								`[convertAsciBrailleToUnicode] Attempt ${attempt} callback registered, waiting for response...`
-							);
-						} catch (innerError) {
-							if (!resolved) {
-								resolved = true;
-								clearTimeout(timeout);
-								console.warn(
-									`[convertAsciBrailleToUnicode] Attempt ${attempt} EXCEPTION in translateString:`,
-									innerError
-								);
-
-								// Retry once after a delay if we haven't hit max attempts
-								if (attempt < maxAttempts) {
-									console.log(
-										`[convertAsciBrailleToUnicode] Retrying attempt ${attempt + 1} after 500ms...`
-									);
-									setTimeout(attemptTranslate, 500);
-								} else {
-									console.warn(`[convertAsciBrailleToUnicode] Max attempts reached, falling back`);
-									resolve(asciBraille);
-								}
-							}
-						}
-					};
-
-					tryTranslate();
-				} catch (error) {
-					console.warn(`[convertAsciBrailleToUnicode] Attempt ${attempt} OUTER EXCEPTION:`, error);
-					if (attempt < maxAttempts) {
-						setTimeout(attemptTranslate, 500);
-					} else {
-						resolve(asciBraille);
-					}
-				}
-			};
-
-			console.log(
-				`[convertAsciBrailleToUnicode] Starting translation attempts for input length ${asciBraille.length}`
-			);
-			attemptTranslate();
-		});
-	}
-
 	// Track the resolved LaTeX for download
 	let resolvedLatex = $state('');
 
@@ -340,7 +170,6 @@
 		});
 
 		return versionReady.then(() => {
-			liblouisReady = true;
 			parseReady = true;
 			console.log('[liblouis] Worker initialized and ready');
 		});
@@ -371,7 +200,6 @@
 						handleFileChange(event, (result, fname) => {
 							text = result;
 							brailleText = ascii2Braille(result);
-							lastBrailleText = ascii2Braille(result);
 							filename = fname.split('.').slice(0, -1).join('.') + '.tex';
 						});
 					}}
@@ -399,7 +227,7 @@
 					bind:value={selectedTable}
 					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2"
 				>
-					{#each brailleTables as table}
+					{#each brailleTables as table (table.value)}
 						<option value={table.value}>{table.label}</option>
 					{/each}
 				</select>
