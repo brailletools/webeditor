@@ -1,3 +1,7 @@
+/** @typedef {{ HtmlGenerator: new(opts: object) => { htmlDocument(): Document }, parse(src: string, opts: object): void }} LatexJs */
+/** @type {Window & { latexjs?: LatexJs }} */
+const win = /** @type {any} */ (window);
+
 /**
  * Reads a file from an input element and calls a callback with the file's content and name.
  * For BRL files, assumes the content is ASCII braille and passes it through.
@@ -119,8 +123,8 @@ export async function compileToHTML(latexContent) {
 	try {
 		// Get latex.js from global window (loaded via CDN in app.html)
 		// The CDN exposes it as 'latexjs' (all lowercase)
-		if (!window.latexjs) {
-			throw new Error('LaTeX.js library not loaded. Expected window.latexjs to be available.');
+		if (!win.latexjs) {
+			throw new Error('LaTeX.js library not loaded. Expected win.latexjs to be available.');
 		}
 
 		// Extract just the document body for browser rendering
@@ -131,8 +135,8 @@ export async function compileToHTML(latexContent) {
 
 		// Create a new HtmlGenerator and use it to parse and generate HTML
 		// latex.js API: create generator, then parse with it
-		const generator = new window.latexjs.HtmlGenerator({ hyphenate: false });
-		window.latexjs.parse(browserLatex, { generator });
+		const generator = new win.latexjs.HtmlGenerator({ hyphenate: false });
+		win.latexjs.parse(browserLatex, { generator });
 
 		// The parse returns a DOM node tree - we need to serialize it to HTML
 		// The generator has the htmlDocument property with the full document
@@ -238,6 +242,8 @@ export async function compileToHTML(latexContent) {
 		}
 	} catch (err) {
 		console.error('HTML conversion error:', err);
-		throw new Error(`HTML conversion failed: ${err?.message ?? 'Unknown error'}`);
+		throw new Error(
+			`HTML conversion failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+		);
 	}
 }
