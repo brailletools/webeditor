@@ -17,7 +17,9 @@
 	// so paths must NOT start with "/" or the worker gets origin + "//path" (double-slash).
 	// Strip any leading slash; at the site root base is '/' so basePath becomes ''.
 	const basePath = (base === '/' ? '' : base).replace(/^\//, '');
-	const capi_url = basePath ? `${basePath}/liblouis/build-tables-embeded-root-utf16.js` : 'liblouis/build-tables-embeded-root-utf16.js';
+	const capi_url = basePath
+		? `${basePath}/liblouis/build-tables-embeded-root-utf16.js`
+		: 'liblouis/build-tables-embeded-root-utf16.js';
 	const easyapi_url = basePath ? `${basePath}/liblouis/easy-api.js` : 'liblouis/easy-api.js';
 
 	// Give the braille2latex package its liblouis URLs
