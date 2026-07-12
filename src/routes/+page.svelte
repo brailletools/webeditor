@@ -8,8 +8,13 @@
 		isCompleteLatexDocument,
 		compileToHTML
 	} from '$lib/helper.js';
-	import { parse, configure, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
-	import liblouis from 'liblouis/easy-api';
+	import {
+		parse,
+		configure,
+		whenReady,
+		ascii2Braille,
+		braille2Ascii
+	} from '@brailletools/braille2latex';
 
 	import { base } from '$app/paths';
 
@@ -17,14 +22,23 @@
 	// so paths must NOT start with "/" or the worker gets origin + "//path" (double-slash).
 	// Strip any leading slash; at the site root base is '/' so basePath becomes ''.
 	const basePath = (base === '/' ? '' : base).replace(/^\//, '');
-	const capi_url = basePath
-		? `${basePath}/liblouis/build-tables-embeded-root-utf16.js`
-		: 'liblouis/build-tables-embeded-root-utf16.js';
-	const easyapi_url = basePath ? `${basePath}/liblouis/easy-api.js` : 'liblouis/easy-api.js';
+	const liblouisBase = basePath ? `${basePath}/liblouis` : 'liblouis';
+
+	// The exact build filename/variant isn't fixed (depends on what the pinned
+	// upstream commit ships) — discover it from manifest.json, written by
+	// liblouis-fetch-web (@brailletools/liblouis-env-web) alongside the assets.
+	const manifest = await fetch(`${liblouisBase}/manifest.json`).then((r) => r.json());
+	const capi_url = `${liblouisBase}/${manifest.buildFile}`;
+	const easyapi_url = `${liblouisBase}/${manifest.easyApiFile}`;
+	const tables_url = manifest.tablesDir ? `${liblouisBase}/${manifest.tablesDir}` : null;
 
 	// Give the braille2latex package its liblouis URLs
-	globalThis.__bt_debug = { base, basePath, capi_url, easyapi_url };
-	configure({ liblouisCapiUrl: capi_url, liblouisEasyApiUrl: easyapi_url });
+	globalThis.__bt_debug = { base, basePath, capi_url, easyapi_url, tables_url, manifest };
+	configure({
+		liblouisCapiUrl: capi_url,
+		liblouisEasyApiUrl: easyapi_url,
+		liblouisTablesUrl: tables_url
+	});
 
 	const brailleTables = [
 		{ value: 'en-ueb-g2.ctb', label: 'English UEB Grade 2' },
@@ -156,30 +170,16 @@
 
 	const authorizedExtensions = ['.brf', '.brl'];
 
-	const asyncLiblouis = new liblouis.EasyApiAsync({
-		capi: capi_url,
-		easyapi: easyapi_url
-	});
-
-	function initializeLiblouis() {
-		console.log('[init] Creating asyncLiblouis Worker...');
-		const versionReady = new Promise((resolve, reject) => {
-			const timeoutId = setTimeout(() => reject(new Error('version() timed out')), 10000);
-			asyncLiblouis.version(() => {
-				clearTimeout(timeoutId);
-				resolve();
-			});
-		});
-
-		return versionReady.then(() => {
+	// configure() (above) already constructs and initializes the liblouis Worker;
+	// whenReady() resolves once that's done, so the UI can gate on it.
+	whenReady()
+		.then(() => {
 			parseReady = true;
 			console.log('[liblouis] Worker initialized and ready');
+		})
+		.catch((error) => {
+			console.error('[liblouis] Initialization failed', error);
 		});
-	}
-
-	initializeLiblouis().catch((error) => {
-		console.error('[liblouis] Initialization failed', error);
-	});
 </script>
 
 <!-- Styling is done with https://tailwindcss.com/, add a css class with whatever style you want -->
