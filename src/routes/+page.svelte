@@ -253,6 +253,7 @@
 				<div class="p-4 flex-auto">
 					<h3 class="text-3xl dark:text-gray-100 mb-2">Output</h3>
 					<div
+						data-testid="latex-output"
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre-line max-h-96 overflow-y-auto"
 					>
 						{#await latex}
