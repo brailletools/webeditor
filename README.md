@@ -1,7 +1,7 @@
 # Braille2Latex
 
 This is a website that lets you type in braille or upload a braille file, and download it as latex, PDF, or HTML. It supports math in NEMETH format. You can try it at
-https://make4all.github.io/braille2latex/
+https://brailletools.org/
 
 ## Dependencies & Credits
 
