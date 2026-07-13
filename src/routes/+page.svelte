@@ -8,8 +8,9 @@
 		isCompleteLatexDocument,
 		compileToHTML
 	} from '$lib/helper.js';
-	import { parse, configure, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
-	import liblouis from 'liblouis/easy-api';
+	import { configure, whenReady, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
+	import { createSyncController } from '$lib/sync.svelte.js';
+	import SyncIssues from '$lib/components/SyncIssues.svelte';
 
 	import { base } from '$app/paths';
 
@@ -17,14 +18,22 @@
 	// so paths must NOT start with "/" or the worker gets origin + "//path" (double-slash).
 	// Strip any leading slash; at the site root base is '/' so basePath becomes ''.
 	const basePath = (base === '/' ? '' : base).replace(/^\//, '');
-	const capi_url = basePath
-		? `${basePath}/liblouis/build-tables-embeded-root-utf16.js`
-		: 'liblouis/build-tables-embeded-root-utf16.js';
-	const easyapi_url = basePath ? `${basePath}/liblouis/easy-api.js` : 'liblouis/easy-api.js';
+	const liblouisBase = basePath ? `${basePath}/liblouis` : 'liblouis';
+
+	// The exact build filename/variant isn't fixed (depends on what the pinned
+	// upstream commit ships) — discover it from manifest.json, written by
+	// liblouis-fetch-web (@brailletools/liblouis-env-web) alongside the assets.
+	const manifest = await fetch(`${liblouisBase}/manifest.json`).then((r) => r.json());
+	const capi_url = `${liblouisBase}/${manifest.buildFile}`;
+	const easyapi_url = `${liblouisBase}/${manifest.easyApiFile}`;
+	const tables_url = manifest.tablesDir ? `${liblouisBase}/${manifest.tablesDir}/` : null;
 
 	// Give the braille2latex package its liblouis URLs
-	globalThis.__bt_debug = { base, basePath, capi_url, easyapi_url };
-	configure({ liblouisCapiUrl: capi_url, liblouisEasyApiUrl: easyapi_url });
+	configure({
+		liblouisCapiUrl: capi_url,
+		liblouisEasyApiUrl: easyapi_url,
+		liblouisTablesUrl: tables_url
+	});
 
 	const brailleTables = [
 		{ value: 'en-ueb-g2.ctb', label: 'English UEB Grade 2' },
@@ -32,154 +41,108 @@
 		{ value: 'en-ueb-math.ctb', label: 'English UEB Math' }
 	];
 
-	let text = $state(sample);
 	let filename = $state('example_filename.tex');
 	let selectedTable = $state(brailleTables[0].value);
 
-	// Keep braille text as state, but sync with text
-	let brailleText = $state(ascii2Braille(sample));
+	let brailleEl = $state(null);
+	let latexEl = $state(null);
 
-	// Track if the Worker is ready
-	let parseReady = $state(false);
+	// Only used as the initial table before the first load — intentionally not
+	// reactive; later table changes go through handleTableChange() -> loadText(),
+	// which explicitly passes the new table.
+	const sync = createSyncController({ table: selectedTable });
 
-	// Check if a string contains braille characters (Unicode 0x2800-0x28FF range)
-	function containsBraille(str) {
-		return /[\u2800-\u28FF]/.test(str);
+	// configure() (above) already constructs and initializes the liblouis Worker;
+	// whenReady() resolves once that's done.
+	let liblouisReady = $state(false);
+	whenReady()
+		.then(() => {
+			liblouisReady = true;
+		})
+		.catch((error) => {
+			console.error('[liblouis] Initialization failed', error);
+		});
+
+	// The initial document can only be built (it needs liblouis) and pushed into
+	// both panes once liblouis is ready AND the textarea refs exist — whenReady()
+	// can resolve before $effect has had a chance to run bind:this into the sync
+	// controller, so gate the initial load on both rather than firing it from the
+	// whenReady() promise directly.
+	let loaded = false;
+	$effect(() => {
+		sync.setBrailleEl(brailleEl);
+		sync.setLatexEl(latexEl);
+		if (brailleEl && latexEl && liblouisReady && !loaded) {
+			loaded = true;
+			sync.loadText(sample);
+		}
+	});
+
+	async function handleTableChange() {
+		if (!brailleEl || !sync.state.ready) return;
+		// Rebuild from the braille pane's current content under the new table —
+		// equivalent to a fresh load, not an incremental edit.
+		await sync.loadText(braille2Ascii(brailleEl.value), selectedTable);
 	}
 
-	// Check if a string contains ASCII text (not just braille or whitespace)
-	function containsAscii(str) {
-		return /[^\u2800-\u28FF\s\n]/.test(str);
-	}
-
-	// Convert any remaining ASCII letters to braille in a mixed string
+	// Converts any stray raw ASCII characters in the braille pane to braille glyphs
+	// so the pane always displays actual braille cells, never raw ASCII — a no-op
+	// once content is already braille (e.g. after handleBeforeInput below, or a
+	// programmatic sync update), so it's safe to run unconditionally on every input.
+	// Must cover more than just letters: NABCC/BRF uses digits and punctuation as
+	// braille-cell codes too, and leaving any of them raw/unconverted in the pane
+	// is what triggers Abraham's UnicodeBraille.toBrailleAscii() to return the
+	// literal string "undefined" for that line when it's later read back (braille2Ascii
+	// in @brailletools/braille2latex has its own defense against that now too, but
+	// keeping the pane's displayed content honestly all-braille is the real fix).
 	function sanitizeToAllBraille(str) {
 		let result = '';
 		for (const char of str) {
-			if (/[a-z]/i.test(char)) {
-				// It's a letter - convert to braille
-				result += ascii2Braille(char);
-			} else {
-				// Keep as-is (braille, space, newline, etc.)
-				result += char;
-			}
+			result += char === '\n' || /[⠀-⣿]/.test(char) ? char : ascii2Braille(char);
 		}
 		return result;
 	}
 
-	// Intercept and convert ASCII letters before they enter the textarea
+	// Intercept keystrokes and convert them to braille glyphs before insertion, so
+	// typing never even flashes raw ASCII. beforeinput's preventDefault() cancels
+	// the browser's own insertion, so this handler updates the DOM value itself and
+	// hands off to the sync controller directly (no subsequent native `input` event
+	// will fire for this keystroke).
 	function handleBeforeInput(event) {
-		if (event.data && /[a-z]/i.test(event.data)) {
-			// It's a letter - convert it to braille
+		if (event.data && /[^⠀-⣿]/.test(event.data)) {
 			const brailleChar = ascii2Braille(event.data);
-			console.log('Converting letter before input:', event.data, '=>', brailleChar);
 			event.preventDefault();
 
-			// Insert the braille character at the cursor position
 			const textarea = event.target;
 			const start = textarea.selectionStart;
 			const end = textarea.selectionEnd;
-			const currentValue = textarea.value;
-
-			const newValue = currentValue.substring(0, start) + brailleChar + currentValue.substring(end);
+			const newValue =
+				textarea.value.substring(0, start) + brailleChar + textarea.value.substring(end);
 			textarea.value = newValue;
-			brailleText = newValue;
-			text = braille2Ascii(newValue);
-
-			// Move cursor to after inserted character
 			textarea.setSelectionRange(start + brailleChar.length, start + brailleChar.length);
+
+			sync.handleBrailleInput({ target: textarea });
 		}
 	}
 
-	// Update both text representations when user types or pastes
-	function handleBrailleInput(event) {
-		let inputValue = event.target.value;
-
-		// Sanitize any stray ASCII letters to braille (for paste events)
-		inputValue = sanitizeToAllBraille(inputValue);
-
-		// Determine if input contains ASCII or braille
-		const hasAscii = containsAscii(inputValue);
-		const hasBraille = containsBraille(inputValue);
-
-		console.log('Input detected - ASCII:', hasAscii, 'Braille:', hasBraille);
-
-		if (hasAscii && !hasBraille) {
-			// Pure ASCII input - convert to braille for display, keep ASCII for processing
-			const brailleConverted = ascii2Braille(inputValue);
-			console.log('ASCII to Braille:', inputValue, '=>', brailleConverted);
-			brailleText = brailleConverted;
-			text = inputValue;
-		} else if (hasBraille) {
-			// Braille input - convert to ASCII for processing
-			const asciiConverted = braille2Ascii(inputValue);
-			console.log('Braille to ASCII:', inputValue, '=>', asciiConverted);
-			brailleText = inputValue;
-			text = asciiConverted;
-		} else {
-			// Only whitespace or empty
-			brailleText = inputValue;
-			text = inputValue;
+	// Handles everything beforeinput doesn't: paste, drag-drop, IME, multi-char
+	// programmatic input.
+	function handleBrailleInputEvent(event) {
+		const textarea = event.target;
+		const sanitized = sanitizeToAllBraille(textarea.value);
+		if (sanitized !== textarea.value) {
+			const cursor = textarea.selectionStart;
+			textarea.value = sanitized;
+			textarea.setSelectionRange(cursor, cursor);
 		}
+		sync.handleBrailleInput(event);
 	}
 
-	let latex = $derived.by(async () => {
-		// Wait for Worker to be ready before attempting to parse
-		if (!parseReady) {
-			console.log('[latex] Waiting for parser to be ready...');
-			return 'Initializing...';
-		}
-
-		try {
-			console.log('[latex] Parsing with table:', selectedTable);
-			console.log('[latex] Input text length:', text.length);
-
-			// Parse the braille input with the selected table
-			let evalstring = await parse(text, selectedTable);
-			console.log('[latex] Parse complete');
-			resolvedLatex = evalstring;
-			return evalstring;
-		} catch (error) {
-			console.error('Parse error:', error);
-			const errorMsg = `Error: ${error.message}`;
-			resolvedLatex = errorMsg;
-			return errorMsg;
-		}
-	});
-
-	// Track the resolved LaTeX for download
-	let resolvedLatex = $state('');
+	const authorizedExtensions = ['.brf', '.brl'];
 
 	// HTML conversion state
 	let htmlLoading = $state(false);
 	let htmlError = $state('');
-
-	const authorizedExtensions = ['.brf', '.brl'];
-
-	const asyncLiblouis = new liblouis.EasyApiAsync({
-		capi: capi_url,
-		easyapi: easyapi_url
-	});
-
-	function initializeLiblouis() {
-		console.log('[init] Creating asyncLiblouis Worker...');
-		const versionReady = new Promise((resolve, reject) => {
-			const timeoutId = setTimeout(() => reject(new Error('version() timed out')), 10000);
-			asyncLiblouis.version(() => {
-				clearTimeout(timeoutId);
-				resolve();
-			});
-		});
-
-		return versionReady.then(() => {
-			parseReady = true;
-			console.log('[liblouis] Worker initialized and ready');
-		});
-	}
-
-	initializeLiblouis().catch((error) => {
-		console.error('[liblouis] Initialization failed', error);
-	});
 </script>
 
 <!-- Styling is done with https://tailwindcss.com/, add a css class with whatever style you want -->
@@ -200,8 +163,7 @@
 					accept={authorizedExtensions.join(',')}
 					onchange={(event) => {
 						handleFileChange(event, (result, fname) => {
-							text = result;
-							brailleText = ascii2Braille(result);
+							sync.loadText(result);
 							filename = fname.split('.').slice(0, -1).join('.') + '.tex';
 						});
 					}}
@@ -227,6 +189,7 @@
 				<select
 					id="braille-table"
 					bind:value={selectedTable}
+					onchange={handleTableChange}
 					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2"
 				>
 					{#each brailleTables as table (table.value)}
@@ -234,41 +197,62 @@
 					{/each}
 				</select>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300">
-					Used for back-translation during LaTeX conversion.
+					Used for translation between braille and LaTeX.
 				</p>
 			</div>
+
+			{#if !sync.state.ready}
+				<p class="px-4 text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
+					Initializing…
+				</p>
+			{/if}
+
 			<div class="flex flex-col lg:flex-row">
 				<div class="p-4 flex-auto">
-					<h3 class="text-3xl dark:text-gray-100 mb-2">Input (Braille)</h3>
+					<h3 class="text-3xl dark:text-gray-100 mb-2">Braille</h3>
 					<textarea
 						id="braille-text"
-						value={brailleText}
+						bind:this={brailleEl}
+						disabled={!sync.state.ready}
 						onbeforeinput={handleBeforeInput}
-						oninput={handleBrailleInput}
-						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto"
+						oninput={handleBrailleInputEvent}
+						onblur={sync.handleBrailleBlur}
+						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
 						placeholder="Enter braille text here or upload a file..."
-						aria-label="Braille input text"
+						aria-label="Braille input, editable"
 					></textarea>
 				</div>
 				<div class="p-4 flex-auto">
-					<h3 class="text-3xl dark:text-gray-100 mb-2">Output</h3>
-					<div
-						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre-line max-h-96 overflow-y-auto"
-					>
-						{#await latex}
-							<span class="text-gray-500">Processing... (check browser console for errors)</span>
-						{:then result}
-							{#if result?.startsWith('Error')}
-								<span class="text-red-500">{result}</span>
-							{:else}
-								{result}
-							{/if}
-						{:catch error}
-							<span class="text-red-500">Fatal Error: {error?.message || error}</span>
-						{/await}
-					</div>
+					<h3 class="text-3xl dark:text-gray-100 mb-2">LaTeX</h3>
+					<textarea
+						id="latex-output"
+						data-testid="latex-output"
+						bind:this={latexEl}
+						disabled={!sync.state.ready}
+						oninput={sync.handleLatexInput}
+						onblur={sync.handleLatexBlur}
+						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
+						placeholder="LaTeX will appear here once the braille pane has content..."
+						aria-label="LaTeX input, editable"
+					></textarea>
 				</div>
 			</div>
+
+			<div class="px-4">
+				<p class="sr-only" role="status" aria-live="polite">
+					{#if sync.state.issues.length > 0}
+						{sync.state.issues.length} sync {sync.state.issues.length === 1 ? 'issue' : 'issues'} — see
+						the sync issues list below.
+					{:else}
+						No sync issues.
+					{/if}
+				</p>
+				<SyncIssues
+					issues={sync.state.issues}
+					onGoTo={(issue) => sync.focusNode(issue.pane, issue.range)}
+				/>
+			</div>
+
 			<div class="p-4">
 				<h3 class="text-3xl dark:text-gray-100">File Download</h3>
 				<p class="mt-1 mb-3 text-sm text-gray-500 dark:text-gray-300">
@@ -284,7 +268,7 @@
 							name="latex-download"
 							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-800 dark:hover:bg-blue-900"
 							onclick={() => {
-								const complete = wrapLatexDocument(resolvedLatex);
+								const complete = wrapLatexDocument(sync.getDoc()?.latexText ?? '');
 								if (!isCompleteLatexDocument(complete)) {
 									console.warn('[download] Wrapped LaTeX document may be incomplete');
 								}
@@ -309,7 +293,7 @@
 								htmlError = '';
 								htmlLoading = true;
 								try {
-									const complete = wrapLatexDocument(resolvedLatex);
+									const complete = wrapLatexDocument(sync.getDoc()?.latexText ?? '');
 									await compileToHTML(complete);
 								} catch (err) {
 									htmlError = err?.message ?? 'HTML conversion failed.';

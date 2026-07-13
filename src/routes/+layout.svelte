@@ -4,4 +4,10 @@
 	let { children } = $props();
 </script>
 
-{@render children()}
+<svelte:boundary>
+	{#snippet pending()}
+		<p role="status" aria-live="polite">Loading…</p>
+	{/snippet}
+
+	{@render children()}
+</svelte:boundary>
