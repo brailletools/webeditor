@@ -11,8 +11,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (local file dependency)
-        run: git clone https://github.com/brailletools/braille2latex.git ${{ github.workspace }}/../braille2latex
+      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+        run: |
+          VERSION=$(cat braille2latex.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
