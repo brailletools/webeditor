@@ -4,8 +4,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "liblouis-fetch-web static/liblouis && vite dev",
-		"build": "liblouis-fetch-web static/liblouis && vite build",
+		"dev": "liblouis-fetch-web static/liblouis && node scripts/fetch-models.mjs && vite dev",
+		"build": "liblouis-fetch-web static/liblouis && node scripts/fetch-models.mjs && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
@@ -49,6 +49,7 @@
 	},
 	"dependencies": {
 		"@brailletools/braille2latex": "file:../braille2latex",
-		"latex.js": "^0.12.6"
+		"latex.js": "^0.12.6",
+		"onnxruntime-web": "^1.20.1"
 	}
 }
