@@ -12,11 +12,12 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",
-		"test:a11y": "playwright test tests/a11y.spec.js"
+		"test:a11y": "playwright test tests/a11y.spec.js",
+		"test:sync": "playwright test tests/sync.spec.js"
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "^4.10.0",
-		"@brailletools/liblouis-env-web": "github:brailletools/liblouis-env#path:/js/packages/web",
+		"@brailletools/liblouis-env-web": "github:brailletools/liblouis-env#copilot/fix-wasm-build-crash&path:/js/packages/web",
 		"@eslint/compat": "^1.2.5",
 		"@eslint/js": "^9.18.0",
 		"@playwright/test": "^1.49.1",
