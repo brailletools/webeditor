@@ -17,7 +17,7 @@
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "^4.10.0",
-		"@brailletools/liblouis-env-web": "github:brailletools/liblouis-env#copilot/fix-wasm-build-crash&path:/js/packages/web",
+		"@brailletools/liblouis-env-web": "github:brailletools/liblouis-env#v0.1.1&path:/js/packages/web",
 		"@eslint/compat": "^1.2.5",
 		"@eslint/js": "^9.18.0",
 		"@playwright/test": "^1.49.1",
