@@ -8,7 +8,7 @@
 		isCompleteLatexDocument,
 		compileToHTML
 	} from '$lib/helper.js';
-	import { configure, whenReady, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
+	import { configure, whenReady, braille2Ascii } from '@brailletools/braille2latex';
 	import { runOcr } from '$lib/ocr/ocrClient.js';
 	import { createSyncController } from '$lib/sync.svelte.js';
 	import SyncIssues from '$lib/components/SyncIssues.svelte';
@@ -83,60 +83,7 @@
 		if (!brailleEl || !sync.state.ready) return;
 		// Rebuild from the braille pane's current content under the new table —
 		// equivalent to a fresh load, not an incremental edit.
-		await sync.loadText(braille2Ascii(brailleEl.value), selectedTable);
-	}
-
-	// Converts any stray raw ASCII characters in the braille pane to braille glyphs
-	// so the pane always displays actual braille cells, never raw ASCII — a no-op
-	// once content is already braille (e.g. after handleBeforeInput below, or a
-	// programmatic sync update), so it's safe to run unconditionally on every input.
-	// Must cover more than just letters: NABCC/BRF uses digits and punctuation as
-	// braille-cell codes too, and leaving any of them raw/unconverted in the pane
-	// is what triggers Abraham's UnicodeBraille.toBrailleAscii() to return the
-	// literal string "undefined" for that line when it's later read back (braille2Ascii
-	// in @brailletools/braille2latex has its own defense against that now too, but
-	// keeping the pane's displayed content honestly all-braille is the real fix).
-	function sanitizeToAllBraille(str) {
-		let result = '';
-		for (const char of str) {
-			result += char === '\n' || /[⠀-⣿]/.test(char) ? char : ascii2Braille(char);
-		}
-		return result;
-	}
-
-	// Intercept keystrokes and convert them to braille glyphs before insertion, so
-	// typing never even flashes raw ASCII. beforeinput's preventDefault() cancels
-	// the browser's own insertion, so this handler updates the DOM value itself and
-	// hands off to the sync controller directly (no subsequent native `input` event
-	// will fire for this keystroke).
-	function handleBeforeInput(event) {
-		if (event.data && /[^⠀-⣿]/.test(event.data)) {
-			const brailleChar = ascii2Braille(event.data);
-			event.preventDefault();
-
-			const textarea = event.target;
-			const start = textarea.selectionStart;
-			const end = textarea.selectionEnd;
-			const newValue =
-				textarea.value.substring(0, start) + brailleChar + textarea.value.substring(end);
-			textarea.value = newValue;
-			textarea.setSelectionRange(start + brailleChar.length, start + brailleChar.length);
-
-			sync.handleBrailleInput({ target: textarea });
-		}
-	}
-
-	// Handles everything beforeinput doesn't: paste, drag-drop, IME, multi-char
-	// programmatic input.
-	function handleBrailleInputEvent(event) {
-		const textarea = event.target;
-		const sanitized = sanitizeToAllBraille(textarea.value);
-		if (sanitized !== textarea.value) {
-			const cursor = textarea.selectionStart;
-			textarea.value = sanitized;
-			textarea.setSelectionRange(cursor, cursor);
-		}
-		sync.handleBrailleInput(event);
+		await sync.loadText(brailleEl.value, selectedTable);
 	}
 
 	const authorizedExtensions = ['.brf', '.brl'];
@@ -290,21 +237,41 @@
 			{/if}
 
 			<div class="flex flex-col lg:flex-row">
-				<div class="p-4 flex-auto">
-					<h3 class="text-3xl dark:text-gray-100 mb-2">Braille</h3>
+				<div class="p-4 flex-1 min-w-0">
+					<h3 class="text-3xl dark:text-gray-100 mb-2">Braille (NABCC)</h3>
+					<details class="mb-2 text-sm text-gray-500 dark:text-gray-300">
+						<summary class="cursor-pointer font-medium text-gray-900 dark:text-white">
+							Using NVDA with a braille display?
+						</summary>
+						<div class="mt-1 space-y-1">
+							<p>
+								This field uses NABCC ("English North American Braille Computer Code") — plain ASCII
+								text, one letter/symbol per braille cell. NABCC is the same encoding BRF files use,
+								and NVDA ships a working input/output table for it.
+							</p>
+							<p>To read and type braille correctly here with NVDA and a braille display:</p>
+							<ol class="list-decimal list-inside">
+								<li>Open the NVDA menu → Preferences → Settings → Braille.</li>
+								<li>
+									Set <strong>Input table</strong> to "English North American Braille Computer Code (NABCC)
+									(en-nabcc.utb)".
+								</li>
+								<li>Set <strong>Output table</strong> to the same table.</li>
+							</ol>
+						</div>
+					</details>
 					<textarea
 						id="braille-text"
 						bind:this={brailleEl}
 						disabled={!sync.state.ready}
-						onbeforeinput={handleBeforeInput}
-						oninput={handleBrailleInputEvent}
+						oninput={sync.handleBrailleInput}
 						onblur={sync.handleBrailleBlur}
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
-						placeholder="Enter braille text here or upload a file..."
-						aria-label="Braille input, editable"
+						placeholder="Enter NABCC braille text here or upload a file..."
+						aria-label="Braille (NABCC) input, editable"
 					></textarea>
 				</div>
-				<div class="p-4 flex-auto">
+				<div class="p-4 flex-1 min-w-0">
 					<h3 class="text-3xl dark:text-gray-100 mb-2">LaTeX</h3>
 					<textarea
 						id="latex-output"
@@ -395,6 +362,19 @@
 					</p>
 				{/if}
 			</div>
+			<footer class="mt-4 px-4 text-sm text-gray-500 dark:text-gray-300">
+				<a
+					href="https://github.com/brailletools/webeditor/issues"
+					class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
+					>Submit a bug</a
+				>
+				<span aria-hidden="true"> · </span>
+				<a
+					href="https://github.com/brailletools"
+					class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
+					>View on GitHub</a
+				>
+			</footer>
 		</div>
 	</div>
 </div>

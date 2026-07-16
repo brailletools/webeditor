@@ -16,7 +16,7 @@
 //    the user tabs to the other pane and starts typing before the first one
 //    resolves) can never mutate the shared DualDocument concurrently.
 
-import { DualDocument, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
+import { DualDocument } from '@brailletools/braille2latex';
 
 const DEBOUNCE_MS = 250;
 
@@ -61,22 +61,14 @@ export function createSyncController({ table: initialTable, translate, translate
 		if (typeof cursor === 'number') el.setSelectionRange(cursor, cursor);
 	}
 
-	// The braille pane displays Unicode braille glyphs, not the ASCII form
-	// DualDocument works in internally — ascii2Braille()/braille2Ascii() are the
-	// display-layer transform at this one boundary (see plan §1: "a pure display
-	// concern layered on doc.brailleText, not part of the canonical model").
-	// asciiValue/cursor below are always in ASCII-braille coordinates; since ASCII
-	// braille is one character per cell, the same numeric cursor offset is valid
-	// in the Unicode-glyph string too, no remapping needed.
-	function writeBrailleDisplay(el, asciiValue, cursor) {
-		writeToPane(el, ascii2Braille(asciiValue), cursor);
-	}
-
+	// The braille pane is edited directly in ASCII (NABCC) — the same format
+	// DualDocument works in internally — so no display-layer transform is needed
+	// at this boundary; writeToPane() above is sufficient.
 	function deliverToBraille(asciiValue, cursor) {
 		if (document.activeElement === brailleEl) {
 			pendingForBraille = { value: asciiValue, cursor };
 		} else {
-			writeBrailleDisplay(brailleEl, asciiValue, cursor);
+			writeToPane(brailleEl, asciiValue, cursor);
 		}
 	}
 
@@ -98,13 +90,13 @@ export function createSyncController({ table: initialTable, translate, translate
 		if (newTable) table = newTable;
 		doc = await DualDocument.fromBraille(text, { table, translate, translateForward });
 		refreshIssues();
-		writeBrailleDisplay(brailleEl, doc.brailleText);
+		writeToPane(brailleEl, doc.brailleText);
 		writeToPane(latexEl, doc.latexText);
 		state.ready = true;
 	}
 
 	function handleBrailleInput(event) {
-		const value = braille2Ascii(event.target.value);
+		const value = event.target.value;
 		const cursor = event.target.selectionStart;
 		const myRevision = ++brailleRevision;
 
@@ -139,7 +131,7 @@ export function createSyncController({ table: initialTable, translate, translate
 
 	function handleBrailleBlur() {
 		if (pendingForBraille) {
-			writeBrailleDisplay(brailleEl, pendingForBraille.value, pendingForBraille.cursor);
+			writeToPane(brailleEl, pendingForBraille.value, pendingForBraille.cursor);
 			pendingForBraille = null;
 		}
 	}
