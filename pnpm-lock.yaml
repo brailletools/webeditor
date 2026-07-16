@@ -11,6 +11,9 @@ importers:
       '@brailletools/braille2latex':
         specifier: file:../braille2latex
         version: file:../braille2latex
+      '@brailletools/brailleocr-web':
+        specifier: file:../brailleocr/js
+        version: file:../brailleocr/js
       latex.js:
         specifier: ^0.12.6
         version: 0.12.6
@@ -100,6 +103,9 @@ packages:
     resolution: {directory: ../braille2latex, type: directory}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@brailletools/brailleocr-web@file:../brailleocr/js':
+    resolution: {directory: ../brailleocr/js, type: directory}
 
   '@brailletools/liblouis-env-web@https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a#path:/js/packages/web':
     resolution: {path: /js/packages/web, tarball: https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a}
@@ -1574,6 +1580,10 @@ snapshots:
   '@brailletools/braille2latex@file:../braille2latex':
     dependencies:
       '@brailletools/liblouis-env': https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a#path:/js/packages/node
+
+  '@brailletools/brailleocr-web@file:../brailleocr/js':
+    dependencies:
+      onnxruntime-web: 1.27.0
 
   '@brailletools/liblouis-env-web@https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a#path:/js/packages/web':
     dependencies:

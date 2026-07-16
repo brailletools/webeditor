@@ -9,6 +9,7 @@
 		compileToHTML
 	} from '$lib/helper.js';
 	import { configure, whenReady, ascii2Braille, braille2Ascii } from '@brailletools/braille2latex';
+	import { runOcr } from '$lib/ocr/ocrClient.js';
 	import { createSyncController } from '$lib/sync.svelte.js';
 	import SyncIssues from '$lib/components/SyncIssues.svelte';
 
@@ -143,6 +144,77 @@
 	// HTML conversion state
 	let htmlLoading = $state(false);
 	let htmlError = $state('');
+
+	// Photo OCR state (only used when the uploaded file(s) are images, not braille text)
+	let ocrLoading = $state(false);
+	let ocrError = $state('');
+	let ocrStage = $state('');
+	let ocrPageProgress = $state('');
+
+	const ocrStageLabels = {
+		decoding: 'Reading photo…',
+		detecting: 'Finding braille cells…',
+		classifying: 'Reading dot patterns…'
+	};
+
+	/** @param {File} file */
+	function isBrailleTextFile(file) {
+		const name = file.name.toLowerCase();
+		return authorizedExtensions.some((ext) => name.endsWith(ext));
+	}
+
+	// One input, dispatched by file extension: .brf/.brl load as braille text,
+	// anything else (photos) run through OCR — the file itself already says
+	// which path applies, so there's no need to ask the user to pick a control.
+	// Multiple photos are treated as consecutive pages of the same braille
+	// document (a physical braille page holds far less text than print, so a
+	// document routinely spans several photographed pages) — sorted by
+	// filename rather than selection order, since click order in the OS file
+	// picker isn't guaranteed to match page order but sequential photo names
+	// (IMG_3153, IMG_3154, ...) usually do.
+	async function handleUpload(event) {
+		const files = Array.from(event.target.files ?? []);
+		event.target.value = ''; // allow re-selecting the same file(s) later
+		if (!files.length || !sync.state.ready) return;
+
+		const textFile = files.find(isBrailleTextFile);
+		if (textFile) {
+			handleFileChange({ target: { files: [textFile] } }, (result, fname) => {
+				sync.loadText(result);
+				filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+			});
+			return;
+		}
+
+		const pages = files.sort((a, b) =>
+			a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+		);
+
+		ocrError = '';
+		ocrStage = '';
+		ocrPageProgress = '';
+		ocrLoading = true;
+		try {
+			const pageTexts = [];
+			for (let i = 0; i < pages.length; i++) {
+				ocrPageProgress = pages.length > 1 ? `Page ${i + 1} of ${pages.length}: ` : '';
+				const unicodeBraille = await runOcr(pages[i], {
+					onProgress: (stage) => {
+						ocrStage = stage;
+					}
+				});
+				pageTexts.push(unicodeBraille);
+			}
+			await sync.loadText(braille2Ascii(pageTexts.join('\n\n')));
+			filename = pages[0].name.split('.').slice(0, -1).join('.') + '.tex';
+		} catch (err) {
+			ocrError = err?.message ?? 'OCR failed.';
+		} finally {
+			ocrLoading = false;
+			ocrStage = '';
+			ocrPageProgress = '';
+		}
+	}
 </script>
 
 <!-- Styling is done with https://tailwindcss.com/, add a css class with whatever style you want -->
@@ -160,26 +232,36 @@
 					class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Upload file</label
 				>
 				<input
-					accept={authorizedExtensions.join(',')}
-					onchange={(event) => {
-						handleFileChange(event, (result, fname) => {
-							sync.loadText(result);
-							filename = fname.split('.').slice(0, -1).join('.') + '.tex';
-						});
-					}}
+					accept={[...authorizedExtensions, 'image/*'].join(',')}
+					onchange={handleUpload}
+					disabled={!sync.state.ready || ocrLoading}
 					id="braille-file"
 					name="braille-file"
 					type="file"
+					multiple
 					aria-labelledby="braille-file-label"
-					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 file:cursor-pointer cursor-pointer rounded-lg border border-gray-300 dark:border-gray-700 file:py-2 file:px-4 file:mr-4 file:bg-gray-800 dark:file:bg-gray-600 file:hover:bg-gray-700 file:text-white font-light file:font-normal"
+					aria-busy={ocrLoading}
+					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 file:cursor-pointer cursor-pointer rounded-lg border border-gray-300 dark:border-gray-700 file:py-2 file:px-4 file:mr-4 file:bg-gray-800 dark:file:bg-gray-600 file:hover:bg-gray-700 file:text-white font-light file:font-normal disabled:opacity-50"
 				/>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" id="file_input_help">
-					BRF or BRL. See syntax requirements <a
+					A BRF or BRL file, or one or more photos of a physical braille page (select multiple for a
+					document spanning several pages) — detected cells are converted to braille text
+					automatically. See BRF/BRL syntax requirements <a
 						href="https://github.com/make4all/braille2latex"
 						class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
 						>here</a
 					>
 				</p>
+				{#if ocrLoading}
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
+						{ocrPageProgress}{ocrStageLabels[ocrStage] ?? 'Running OCR…'}
+					</p>
+				{/if}
+				{#if ocrError}
+					<p class="mt-1 text-sm text-red-500" role="alert">
+						{ocrError}
+					</p>
+				{/if}
 			</div>
 			<div class="pb-4 px-4">
 				<label
