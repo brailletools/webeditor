@@ -11,8 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (local file dependency)
-        run: git clone https://github.com/brailletools/braille2latex.git ${{ github.workspace }}/../braille2latex
+      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+        run: |
+          VERSION=$(cat braille2latex.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+
+      - name: Checkout brailleocr (pinned release, see brailleocr.version)
+        run: |
+          VERSION=$(cat brailleocr.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/brailleocr.git "${{ github.workspace }}/../brailleocr"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -30,3 +37,64 @@ jobs:
 
       - name: Accessibility tests
         run: pnpm run test:a11y
+
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+        run: |
+          VERSION=$(cat braille2latex.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+
+      - name: Checkout brailleocr (pinned release, see brailleocr.version)
+        run: |
+          VERSION=$(cat brailleocr.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/brailleocr.git "${{ github.workspace }}/../brailleocr"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Bidirectional sync tests
+        run: pnpm run test:sync
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+        run: |
+          VERSION=$(cat braille2latex.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+
+      - name: Checkout brailleocr (pinned release, see brailleocr.version)
+        run: |
+          VERSION=$(cat brailleocr.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/brailleocr.git "${{ github.workspace }}/../brailleocr"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install
+
+      - name: Unit tests
+        run: pnpm run test:unit
