@@ -132,8 +132,14 @@
 		const textFile = files.find(isBrailleTextFile);
 		if (textFile) {
 			handleFileChange({ target: { files: [textFile] } }, (result, fname) => {
-				sync.loadText(result);
-				filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+				void sync
+					.loadText(result)
+					.then(() => {
+						filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+					})
+					.catch((err) => {
+						ocrError = err instanceof Error ? err.message : String(err);
+					});
 			});
 			return;
 		}
