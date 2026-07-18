@@ -124,11 +124,22 @@
 		event.target.value = ''; // allow re-selecting the same file(s) later
 		if (!files.length || !sync.state.ready) return;
 
+		// Clear any previous OCR status/error when starting a new upload (text or images).
+		ocrError = '';
+		ocrStage = '';
+		ocrPageProgress = '';
+
 		const textFile = files.find(isBrailleTextFile);
 		if (textFile) {
 			handleFileChange({ target: { files: [textFile] } }, (result, fname) => {
-				sync.loadText(result);
-				filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+				void sync
+					.loadText(result)
+					.then(() => {
+						filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+					})
+					.catch((err) => {
+						ocrError = err instanceof Error ? err.message : String(err);
+					});
 			});
 			return;
 		}
