@@ -131,15 +131,14 @@
 
 		const textFile = files.find(isBrailleTextFile);
 		if (textFile) {
-			handleFileChange({ target: { files: [textFile] } }, (result, fname) => {
-				void sync
-					.loadText(result)
-					.then(() => {
-						filename = fname.split('.').slice(0, -1).join('.') + '.tex';
-					})
-					.catch((err) => {
-						ocrError = err instanceof Error ? err.message : String(err);
-					});
+			handleFileChange({ target: { files: [textFile] } }, async (result, fname) => {
+				// loadText() catches its own failures and surfaces them via
+				// sync.state.loadError rather than rejecting (see sync.svelte.js) --
+				// only rename the output file if the load actually succeeded.
+				await sync.loadText(result);
+				if (!sync.state.loadError) {
+					filename = fname.split('.').slice(0, -1).join('.') + '.tex';
+				}
 			});
 			return;
 		}
