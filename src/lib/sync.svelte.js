@@ -24,7 +24,8 @@ export function createSyncController({ table: initialTable, translate, translate
 	let table = initialTable;
 	const state = $state({
 		issues: [],
-		ready: false
+		ready: false,
+		loadError: ''
 	});
 
 	let doc = null;
@@ -87,8 +88,26 @@ export function createSyncController({ table: initialTable, translate, translate
 	 * focus-guard subtlety here: both panes are simply overwritten.
 	 */
 	async function loadText(text, newTable) {
+		// Callers invoke this from effects and event handlers, some without awaiting
+		// (the initial sample load, the .brf/.brl upload branch) -- an unhandled
+		// rejection here would otherwise surface nowhere. Build the new document
+		// before committing anything, so a failure (invalid content, liblouis
+		// failure) leaves the last-known-good doc/panes/table untouched instead of
+		// leaving state.ready stuck or the panes out of sync with `table`.
+		let newDoc;
+		try {
+			newDoc = await DualDocument.fromBraille(text, {
+				table: newTable ?? table,
+				translate,
+				translateForward
+			});
+		} catch (error) {
+			state.loadError = error?.message ?? String(error);
+			return;
+		}
 		if (newTable) table = newTable;
-		doc = await DualDocument.fromBraille(text, { table, translate, translateForward });
+		doc = newDoc;
+		state.loadError = '';
 		refreshIssues();
 		writeToPane(brailleEl, doc.brailleText);
 		writeToPane(latexEl, doc.latexText);

@@ -235,6 +235,11 @@
 					Initializing…
 				</p>
 			{/if}
+			{#if sync.state.loadError}
+				<p class="px-4 text-sm text-red-500" role="alert">
+					Couldn't load the document: {sync.state.loadError}
+				</p>
+			{/if}
 
 			<div class="flex flex-col lg:flex-row">
 				<div class="p-4 flex-1 min-w-0">

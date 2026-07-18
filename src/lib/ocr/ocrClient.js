@@ -25,6 +25,15 @@ function getWorker() {
 	return worker;
 }
 
+// The worker protocol has no request id (see ocrWorker.js's header comment), so two
+// overlapping runOcr() calls would both attach listeners to the same shared worker
+// and could resolve/reject each other's promise with the wrong result. The one
+// current caller (+page.svelte's handleUpload) already awaits each page in sequence
+// and disables its file input while OCR is running, so this can't happen through the
+// UI today -- this guard is what makes that an enforced contract rather than an
+// accident of how the current caller happens to behave.
+let inFlight = false;
+
 /**
  * Runs the full OCR pipeline on an uploaded image file and resolves to
  * Unicode braille text (one line per detected text line, spaces inferred).
@@ -33,11 +42,19 @@ function getWorker() {
  * @returns {Promise<string>}
  */
 export function runOcr(file, { confThreshold = 0.15, onProgress } = {}) {
+	if (inFlight) {
+		return Promise.reject(
+			new Error('OCR is already running; wait for it to finish before starting another.')
+		);
+	}
+	inFlight = true;
+
 	const w = getWorker();
 	const modelsBase = absoluteUrl('models');
 
 	return new Promise((resolve, reject) => {
 		function cleanup() {
+			inFlight = false;
 			w.removeEventListener('message', handleMessage);
 			w.removeEventListener('error', handleError);
 		}
