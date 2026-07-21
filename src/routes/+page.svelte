@@ -4,11 +4,19 @@
 	import {
 		handleFileChange,
 		downloadText,
+		downloadBlob,
 		wrapLatexDocument,
 		isCompleteLatexDocument,
 		compileToHTML
 	} from '$lib/helper.js';
-	import { configure, whenReady, braille2Ascii } from '@brailletools/braille2latex';
+	import {
+		configure,
+		whenReady,
+		braille2Ascii,
+		convertText,
+		convertFromBinaryFormat,
+		convertToBinaryFormat
+	} from '@brailletools/braille2latex';
 	import { runOcr } from '$lib/ocr/ocrClient.js';
 	import { createSyncController } from '$lib/sync.svelte.js';
 	import SyncIssues from '$lib/components/SyncIssues.svelte';
@@ -44,9 +52,13 @@
 
 	let filename = $state('example_filename.tex');
 	let selectedTable = $state(brailleTables[0].value);
+	// Mirrors createSyncController()'s own default ('latex') -- kept in sync
+	// via handleFormatChange() below, the same pattern selectedTable/
+	// handleTableChange() already use.
+	let selectedFormat = $state('latex');
 
 	let brailleEl = $state(null);
-	let latexEl = $state(null);
+	let secondEl = $state(null);
 
 	// Only used as the initial table before the first load — intentionally not
 	// reactive; later table changes go through handleTableChange() -> loadText(),
@@ -72,8 +84,8 @@
 	let loaded = false;
 	$effect(() => {
 		sync.setBrailleEl(brailleEl);
-		sync.setLatexEl(latexEl);
-		if (brailleEl && latexEl && liblouisReady && !loaded) {
+		sync.setSecondEl(secondEl);
+		if (brailleEl && secondEl && liblouisReady && !loaded) {
 			loaded = true;
 			sync.loadText(sample);
 		}
@@ -86,11 +98,60 @@
 		await sync.loadText(brailleEl.value, selectedTable);
 	}
 
-	const authorizedExtensions = ['.brf', '.brl'];
+	async function handleFormatChange() {
+		if (!sync.state.ready) return;
+		await sync.setFormat(selectedFormat);
+	}
+
+	// Keyboard shortcut: jump the cursor to the corresponding location in the
+	// other pane (braille <-> the current second-pane format), reusing the
+	// same best-effort proportional mapping that already keeps the two panes'
+	// cursors in sync while typing (see DualDocument.mapCursor()). Ctrl+Alt+J
+	// rather than a bare accelerator key: low collision risk with both
+	// browser/OS shortcuts and NVDA's own (NVDA's default modifier is Insert/
+	// CapsLock, not Ctrl+Alt) -- important given this tool's documented
+	// NVDA-focused audience.
+	/** @param {KeyboardEvent} event @param {'braille' | 'second'} fromPane */
+	function handleJumpShortcut(event, fromPane) {
+		if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== 'j') return;
+		event.preventDefault();
+		sync.jumpToOtherPane(fromPane);
+	}
+
+	const authorizedExtensions = ['.brf', '.brl', '.md', '.tex', '.docx'];
 
 	// HTML conversion state
 	let htmlLoading = $state(false);
 	let htmlError = $state('');
+
+	// Download state -- renderLatex()/renderMarkdown() are usually fast (no
+	// network/wasm involved), but are still async DualDocument tree walks, so
+	// they get the same disabled+aria-busy treatment as the two conversions
+	// below rather than being left unprotected against a double-click.
+	let latexDownloadLoading = $state(false);
+	let markdownDownloadLoading = $state(false);
+
+	// Word (.docx) download state -- goes through Pandoc, same first-use cost
+	// note as pandocLoading above.
+	let wordDownloadLoading = $state(false);
+	let wordDownloadError = $state('');
+
+	// Single shared aria-live announcement for whichever download conversion
+	// is in progress -- a <button>'s own text changing (e.g. to "Converting…")
+	// isn't reliably announced by screen readers on its own, since a button
+	// isn't a live region; this mirrors the explicit role="status" pattern
+	// already used for OCR/Pandoc upload progress above.
+	let downloadStatusMessage = $derived(
+		latexDownloadLoading
+			? 'Preparing the LaTeX download…'
+			: markdownDownloadLoading
+				? 'Preparing the Markdown download…'
+				: wordDownloadLoading
+					? 'Converting to Word…'
+					: htmlLoading
+						? 'Converting to HTML…'
+						: ''
+	);
 
 	// Photo OCR state (only used when the uploaded file(s) are images, not braille text)
 	let ocrLoading = $state(false);
@@ -104,21 +165,110 @@
 		classifying: 'Reading dot patterns…'
 	};
 
+	// Pandoc conversion state (.tex/.docx uploads only -- .md needs no Pandoc
+	// step, see loadMarkdownFile() below). First use pays pandoc-wasm's ~56MB
+	// lazy-load cost (see @brailletools/braille2latex's src/pandoc.js), hence a
+	// dedicated loading message distinct from the OCR one.
+	let pandocLoading = $state(false);
+
 	/** @param {File} file */
 	function isBrailleTextFile(file) {
 		const name = file.name.toLowerCase();
-		return authorizedExtensions.some((ext) => name.endsWith(ext));
+		return name.endsWith('.brf') || name.endsWith('.brl');
+	}
+
+	/** @param {File} file */
+	function isMarkdownFile(file) {
+		return file.name.toLowerCase().endsWith('.md');
+	}
+
+	/** @param {File} file */
+	function isLatexFile(file) {
+		return file.name.toLowerCase().endsWith('.tex');
+	}
+
+	/** @param {File} file */
+	function isWordFile(file) {
+		return file.name.toLowerCase().endsWith('.docx');
+	}
+
+	/** @param {string} name */
+	function stripExtension(name) {
+		return name.split('.').slice(0, -1).join('.');
+	}
+
+	/** @param {string} name @param {string} ext */
+	function withExtension(name, ext) {
+		return stripExtension(name) + ext;
+	}
+
+	/**
+	 * Loads a .brf/.brl file as braille source text (the original upload path).
+	 * @param {File} file
+	 */
+	async function loadBrailleFile(file) {
+		handleFileChange({ target: { files: [file] } }, async (result, fname) => {
+			await sync.loadText(result);
+			if (!sync.state.loadError) {
+				filename = stripExtension(fname) + '.tex';
+			}
+		});
+	}
+
+	/**
+	 * Loads Markdown source directly (no Pandoc needed — braille2latex parses
+	 * Markdown natively, see DualDocument.fromMarkdown()).
+	 * @param {File} file
+	 */
+	async function loadMarkdownFile(file) {
+		handleFileChange({ target: { files: [file] } }, async (result, fname) => {
+			await sync.loadMarkdown(result);
+			if (!sync.state.loadError) {
+				filename = stripExtension(fname) + '.tex';
+			}
+		});
+	}
+
+	/**
+	 * Loads a .tex or .docx file as a starting document by first converting it
+	 * to Markdown via Pandoc, then handing that to sync.loadMarkdown() — same
+	 * entry point loadMarkdownFile() uses, so both paths get identical
+	 * downstream parsing/error-surfacing.
+	 * @param {File} file
+	 * @param {'latex' | 'docx'} sourceFormat
+	 */
+	async function loadViaPandoc(file, sourceFormat) {
+		pandocLoading = true;
+		try {
+			const markdown =
+				sourceFormat === 'latex'
+					? await convertText(await file.text(), 'latex', 'markdown')
+					: await convertFromBinaryFormat(await file.arrayBuffer(), 'docx', 'markdown');
+			await sync.loadMarkdown(markdown);
+			if (!sync.state.loadError) {
+				filename = stripExtension(file.name) + '.tex';
+			}
+		} catch (err) {
+			// Conversion failed before there was any Markdown to hand to
+			// loadMarkdown() -- surface it the same way a failed load normally
+			// would (loadMarkdown()'s own try/catch handles failures *after*
+			// this point; this covers the Pandoc step ahead of it).
+			sync.setLoadError(err?.message ?? String(err));
+		} finally {
+			pandocLoading = false;
+		}
 	}
 
 	// One input, dispatched by file extension: .brf/.brl load as braille text,
-	// anything else (photos) run through OCR — the file itself already says
-	// which path applies, so there's no need to ask the user to pick a control.
-	// Multiple photos are treated as consecutive pages of the same braille
-	// document (a physical braille page holds far less text than print, so a
-	// document routinely spans several photographed pages) — sorted by
-	// filename rather than selection order, since click order in the OS file
-	// picker isn't guaranteed to match page order but sequential photo names
-	// (IMG_3153, IMG_3154, ...) usually do.
+	// .md loads as Markdown directly, .tex/.docx load as Markdown via Pandoc
+	// first, anything else (photos) run through OCR — the file itself already
+	// says which path applies, so there's no need to ask the user to pick a
+	// control. Multiple photos are treated as consecutive pages of the same
+	// braille document (a physical braille page holds far less text than
+	// print, so a document routinely spans several photographed pages) —
+	// sorted by filename rather than selection order, since click order in the
+	// OS file picker isn't guaranteed to match page order but sequential photo
+	// names (IMG_3153, IMG_3154, ...) usually do.
 	async function handleUpload(event) {
 		const files = Array.from(event.target.files ?? []);
 		event.target.value = ''; // allow re-selecting the same file(s) later
@@ -131,15 +281,27 @@
 
 		const textFile = files.find(isBrailleTextFile);
 		if (textFile) {
-			handleFileChange({ target: { files: [textFile] } }, async (result, fname) => {
-				// loadText() catches its own failures and surfaces them via
-				// sync.state.loadError rather than rejecting (see sync.svelte.js) --
-				// only rename the output file if the load actually succeeded.
-				await sync.loadText(result);
-				if (!sync.state.loadError) {
-					filename = fname.split('.').slice(0, -1).join('.') + '.tex';
-				}
-			});
+			// loadText() catches its own failures and surfaces them via
+			// sync.state.loadError rather than rejecting (see sync.svelte.js).
+			await loadBrailleFile(textFile);
+			return;
+		}
+
+		const markdownFile = files.find(isMarkdownFile);
+		if (markdownFile) {
+			await loadMarkdownFile(markdownFile);
+			return;
+		}
+
+		const latexFile = files.find(isLatexFile);
+		if (latexFile) {
+			await loadViaPandoc(latexFile, 'latex');
+			return;
+		}
+
+		const wordFile = files.find(isWordFile);
+		if (wordFile) {
+			await loadViaPandoc(wordFile, 'docx');
 			return;
 		}
 
@@ -191,19 +353,19 @@
 				<input
 					accept={[...authorizedExtensions, 'image/*'].join(',')}
 					onchange={handleUpload}
-					disabled={!sync.state.ready || ocrLoading}
+					disabled={!sync.state.ready || ocrLoading || pandocLoading}
 					id="braille-file"
 					name="braille-file"
 					type="file"
 					multiple
 					aria-labelledby="braille-file-label"
-					aria-busy={ocrLoading}
+					aria-busy={ocrLoading || pandocLoading}
 					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 file:cursor-pointer cursor-pointer rounded-lg border border-gray-300 dark:border-gray-700 file:py-2 file:px-4 file:mr-4 file:bg-gray-800 dark:file:bg-gray-600 file:hover:bg-gray-700 file:text-white font-light file:font-normal disabled:opacity-50"
 				/>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" id="file_input_help">
-					A BRF or BRL file, or one or more photos of a physical braille page (select multiple for a
-					document spanning several pages) — detected cells are converted to braille text
-					automatically. See BRF/BRL syntax requirements <a
+					A BRF, BRL, Markdown (.md), LaTeX (.tex), or Word (.docx) file, or one or more photos of a
+					physical braille page (select multiple for a document spanning several pages) — content is
+					converted to braille text automatically. See BRF/BRL syntax requirements <a
 						href="https://github.com/make4all/braille2latex"
 						class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
 						>here</a
@@ -212,6 +374,11 @@
 				{#if ocrLoading}
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
 						{ocrPageProgress}{ocrStageLabels[ocrStage] ?? 'Running OCR…'}
+					</p>
+				{/if}
+				{#if pandocLoading}
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
+						Converting via Pandoc… (first use downloads a one-time ~56MB converter)
 					</p>
 				{/if}
 				{#if ocrError}
@@ -281,23 +448,49 @@
 						disabled={!sync.state.ready}
 						oninput={sync.handleBrailleInput}
 						onblur={sync.handleBrailleBlur}
+						onkeydown={(e) => handleJumpShortcut(e, 'braille')}
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
 						placeholder="Enter NABCC braille text here or upload a file..."
-						aria-label="Braille (NABCC) input, editable"
+						aria-label="Braille (NABCC) input, editable. Press Control+Alt+J to jump to the corresponding location in the {selectedFormat ===
+						'markdown'
+							? 'Markdown'
+							: 'LaTeX'} pane."
 					></textarea>
 				</div>
 				<div class="p-4 flex-1 min-w-0">
-					<h3 class="text-3xl dark:text-gray-100 mb-2">LaTeX</h3>
+					<div class="flex items-center justify-between gap-2 mb-2">
+						<h3 class="text-3xl dark:text-gray-100">
+							{selectedFormat === 'markdown' ? 'Markdown' : 'LaTeX'}
+						</h3>
+						<div>
+							<label for="second-pane-format" class="sr-only">Second pane format</label>
+							<select
+								id="second-pane-format"
+								bind:value={selectedFormat}
+								onchange={handleFormatChange}
+								disabled={!sync.state.ready}
+								class="text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 rounded-lg border border-gray-300 dark:border-gray-700 px-2 py-1 disabled:opacity-50"
+							>
+								<option value="latex">LaTeX</option>
+								<option value="markdown">Markdown</option>
+							</select>
+						</div>
+					</div>
 					<textarea
-						id="latex-output"
-						data-testid="latex-output"
-						bind:this={latexEl}
+						id="second-pane-output"
+						data-testid="second-pane-output"
+						bind:this={secondEl}
 						disabled={!sync.state.ready}
-						oninput={sync.handleLatexInput}
-						onblur={sync.handleLatexBlur}
+						oninput={sync.handleSecondInput}
+						onblur={sync.handleSecondBlur}
+						onkeydown={(e) => handleJumpShortcut(e, 'second')}
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
-						placeholder="LaTeX will appear here once the braille pane has content..."
-						aria-label="LaTeX input, editable"
+						placeholder="{selectedFormat === 'markdown'
+							? 'Markdown'
+							: 'LaTeX'} will appear here once the braille pane has content..."
+						aria-label="{selectedFormat === 'markdown'
+							? 'Markdown'
+							: 'LaTeX'} input, editable. Press Control+Alt+J to jump to the corresponding location in the braille pane."
 					></textarea>
 				</div>
 			</div>
@@ -313,30 +506,37 @@
 				</p>
 				<SyncIssues
 					issues={sync.state.issues}
-					onGoTo={(issue) => sync.focusNode(issue.pane, issue.range)}
+					secondPaneLabel={selectedFormat === 'markdown' ? 'Markdown' : 'LaTeX'}
+					onGoTo={(issue) => sync.focusNode(issue.pane, issue.range, issue.brailleRange)}
 				/>
 			</div>
 
 			<div class="p-4">
 				<h3 class="text-3xl dark:text-gray-100">File Download</h3>
 				<p class="mt-1 mb-3 text-sm text-gray-500 dark:text-gray-300">
-					Download the converted LaTeX or compile it to PDF.
+					Download the converted document as LaTeX, Markdown, or Word, or open an HTML preview.
 				</p>
 				<div class="flex flex-wrap gap-2">
 					<div>
-						<label id="latex-download-label" for="latex-download" class="sr-only"
-							>Download a LaTeX file</label
-						>
 						<button
 							id="latex-download"
-							name="latex-download"
-							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-800 dark:hover:bg-blue-900"
-							onclick={() => {
-								const complete = wrapLatexDocument(sync.getDoc()?.latexText ?? '');
-								if (!isCompleteLatexDocument(complete)) {
-									console.warn('[download] Wrapped LaTeX document may be incomplete');
+							disabled={latexDownloadLoading}
+							aria-busy={latexDownloadLoading}
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-800 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={async () => {
+								latexDownloadLoading = true;
+								try {
+									// renderLatex(), not the .latexText getter -- the latter can be
+									// stale if the most recent edit came through the Markdown pane
+									// (see DualDocument's doc comments).
+									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '');
+									if (!isCompleteLatexDocument(complete)) {
+										console.warn('[download] Wrapped LaTeX document may be incomplete');
+									}
+									downloadText(complete, withExtension(filename, '.tex'));
+								} finally {
+									latexDownloadLoading = false;
 								}
-								downloadText(complete, filename);
 							}}
 						>
 							Download LaTeX (.tex)
@@ -344,12 +544,52 @@
 					</div>
 
 					<div>
-						<label id="html-download-label" for="html-download" class="sr-only"
-							>Convert to HTML</label
+						<button
+							id="markdown-download"
+							disabled={markdownDownloadLoading}
+							aria-busy={markdownDownloadLoading}
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-800 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={async () => {
+								markdownDownloadLoading = true;
+								try {
+									const markdown = (await sync.getDoc()?.renderMarkdown()) ?? '';
+									downloadText(markdown, withExtension(filename, '.md'));
+								} finally {
+									markdownDownloadLoading = false;
+								}
+							}}
 						>
+							Download Markdown (.md)
+						</button>
+					</div>
+
+					<div>
+						<button
+							id="word-download"
+							disabled={wordDownloadLoading}
+							aria-busy={wordDownloadLoading}
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-800 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={async () => {
+								wordDownloadError = '';
+								wordDownloadLoading = true;
+								try {
+									const markdown = (await sync.getDoc()?.renderMarkdown()) ?? '';
+									const docxBlob = await convertToBinaryFormat(markdown, 'markdown', 'docx');
+									downloadBlob(docxBlob, withExtension(filename, '.docx'));
+								} catch (err) {
+									wordDownloadError = err?.message ?? 'Word conversion failed.';
+								} finally {
+									wordDownloadLoading = false;
+								}
+							}}
+						>
+							{wordDownloadLoading ? 'Converting…' : 'Download Word (.docx)'}
+						</button>
+					</div>
+
+					<div>
 						<button
 							id="html-download"
-							name="html-download"
 							disabled={htmlLoading}
 							aria-busy={htmlLoading}
 							class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 dark:bg-purple-800 dark:hover:bg-purple-900 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -357,7 +597,7 @@
 								htmlError = '';
 								htmlLoading = true;
 								try {
-									const complete = wrapLatexDocument(sync.getDoc()?.latexText ?? '');
+									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '');
 									await compileToHTML(complete);
 								} catch (err) {
 									htmlError = err?.message ?? 'HTML conversion failed.';
@@ -371,6 +611,16 @@
 					</div>
 				</div>
 
+				{#if downloadStatusMessage}
+					<p class="mt-2 text-sm text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
+						{downloadStatusMessage}
+					</p>
+				{/if}
+				{#if wordDownloadError}
+					<p class="mt-2 text-sm text-red-500" role="alert">
+						{wordDownloadError}
+					</p>
+				{/if}
 				{#if htmlError}
 					<p class="mt-2 text-sm text-red-500" role="alert">
 						{htmlError}

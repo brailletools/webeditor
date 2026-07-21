@@ -77,7 +77,7 @@ importers:
         version: 5.36.10
       svelte-check:
         specifier: ^4.0.0
-        version: 4.3.1(picomatch@4.0.3)(svelte@5.36.10)(typescript@5.9.2)
+        version: 4.3.1(picomatch@4.0.5)(svelte@5.36.10)(typescript@5.9.2)
       tailwindcss:
         specifier: ^4.0.0
         version: 4.1.12
@@ -119,6 +119,9 @@ packages:
     resolution: {integrity: sha512-70vBT/Ylqpm65RQz2iCG2o0JJCEG/WCNyefTr2xcOcr1CoSee60gNQYUMZZ7YukoKkFLv26I/jjlsvwwp532oQ==}
     peerDependencies:
       playwright-core: '>= 1.0.0'
+
+  '@bjorn3/browser_wasi_shim@0.4.2':
+    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@brailletools/braille2latex@file:../braille2latex':
     resolution: {directory: ../braille2latex, type: directory}
@@ -1412,6 +1415,9 @@ packages:
   pako@0.2.9:
     resolution: {integrity: sha512-NUcwaKxUxWrZLpDG+z/xZaCgQITkA/Dv4V/T6bw7VON6l1Xz/VnrBqrYjZQ12TamKHzITTfOEIYUj48y2KXImA==}
 
+  pandoc-wasm@1.1.0:
+    resolution: {integrity: sha512-IoWBsC/cbSZe71rcRtxXUxG+Auf8aGDHKYOQZA6OdwmUL2xdpQaqrSGhPa+6zfLdSar7cnyAmTWt6KU9n5kBjQ==}
+
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
@@ -1919,9 +1925,12 @@ snapshots:
       axe-core: 4.11.0
       playwright-core: 1.57.0
 
+  '@bjorn3/browser_wasi_shim@0.4.2': {}
+
   '@brailletools/braille2latex@file:../braille2latex':
     dependencies:
       '@brailletools/liblouis-env': https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a#path:/js/packages/node
+      pandoc-wasm: 1.1.0
 
   '@brailletools/brailleocr-web@file:../brailleocr/js':
     dependencies:
@@ -2710,6 +2719,10 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.3
 
+  fdir@6.4.6(picomatch@4.0.5):
+    optionalDependencies:
+      picomatch: 4.0.5
+
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
@@ -3050,6 +3063,10 @@ snapshots:
 
   pako@0.2.9: {}
 
+  pandoc-wasm@1.1.0:
+    dependencies:
+      '@bjorn3/browser_wasi_shim': 0.4.2
+
   parent-module@1.0.1:
     dependencies:
       callsites: 3.1.0
@@ -3240,11 +3257,11 @@ snapshots:
     dependencies:
       has-flag: 4.0.0
 
-  svelte-check@4.3.1(picomatch@4.0.3)(svelte@5.36.10)(typescript@5.9.2):
+  svelte-check@4.3.1(picomatch@4.0.5)(svelte@5.36.10)(typescript@5.9.2):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.29
       chokidar: 4.0.3
-      fdir: 6.4.6(picomatch@4.0.3)
+      fdir: 6.4.6(picomatch@4.0.5)
       picocolors: 1.1.1
       sade: 1.8.1
       svelte: 5.36.10
