@@ -1,12 +1,14 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 const fromBraille = vi.fn();
-vi.mock('@brailletools/braille2latex', () => ({
-	DualDocument: { fromBraille }
+const fromMarkdown = vi.fn();
+vi.mock('@brailletools/braille-bridge', () => ({
+	DualDocument: { fromBraille, fromMarkdown }
 }));
 
 beforeEach(() => {
 	fromBraille.mockReset();
+	fromMarkdown.mockReset();
 });
 
 describe('sync.svelte.js loadText error handling', () => {
@@ -27,7 +29,12 @@ describe('sync.svelte.js loadText error handling', () => {
 		const { createSyncController } = await import('./sync.svelte.js');
 		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
 
-		fromBraille.mockResolvedValueOnce({ brailleText: 'HELLO', latexText: 'hello', errors: [] });
+		fromBraille.mockResolvedValueOnce({
+			brailleText: 'HELLO',
+			latexText: 'hello',
+			renderLatex: async () => 'hello',
+			errors: []
+		});
 		await sync.loadText('HELLO');
 		expect(sync.state.ready).toBe(true);
 		expect(sync.state.loadError).toBe('');
@@ -47,9 +54,78 @@ describe('sync.svelte.js loadText error handling', () => {
 		await sync.loadText('bad input');
 		expect(sync.state.loadError).toBe('boom');
 
-		fromBraille.mockResolvedValueOnce({ brailleText: 'HELLO', latexText: 'hello', errors: [] });
+		fromBraille.mockResolvedValueOnce({
+			brailleText: 'HELLO',
+			latexText: 'hello',
+			renderLatex: async () => 'hello',
+			errors: []
+		});
 		await sync.loadText('HELLO');
 		expect(sync.state.loadError).toBe('');
 		expect(sync.state.ready).toBe(true);
+	});
+});
+
+describe('sync.svelte.js format switching', () => {
+	function makeMockDoc() {
+		return {
+			brailleText: 'HELLO',
+			latexText: 'stale-latex', // never returned directly -- renderSecondPaneText() must call renderLatex()
+			renderLatex: vi.fn(async () => 'fresh-latex'),
+			renderMarkdown: vi.fn(async () => 'fresh-markdown'),
+			errors: []
+		};
+	}
+
+	test('defaults to latex and renders via renderLatex(), not the .latexText getter, on load', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const doc = makeMockDoc();
+		fromBraille.mockResolvedValueOnce(doc);
+
+		await sync.loadText('HELLO');
+
+		expect(sync.state.format).toBe('latex');
+		expect(doc.renderLatex).toHaveBeenCalledTimes(1);
+		expect(doc.renderMarkdown).not.toHaveBeenCalled();
+	});
+
+	test('loadMarkdown() builds via DualDocument.fromMarkdown() and still renders the active format', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const doc = makeMockDoc();
+		fromMarkdown.mockResolvedValueOnce(doc);
+
+		await sync.loadMarkdown('**hi**');
+
+		expect(fromMarkdown).toHaveBeenCalledTimes(1);
+		expect(sync.state.ready).toBe(true);
+		expect(doc.renderLatex).toHaveBeenCalledTimes(1);
+	});
+
+	test('setFormat("markdown") re-renders via renderMarkdown() and updates state.format', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const doc = makeMockDoc();
+		fromBraille.mockResolvedValueOnce(doc);
+		await sync.loadText('HELLO');
+
+		await sync.setFormat('markdown');
+
+		expect(sync.state.format).toBe('markdown');
+		expect(doc.renderMarkdown).toHaveBeenCalledTimes(1);
+	});
+
+	test('setFormat() with the current format is a no-op (no re-render)', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const doc = makeMockDoc();
+		fromBraille.mockResolvedValueOnce(doc);
+		await sync.loadText('HELLO');
+		doc.renderLatex.mockClear();
+
+		await sync.setFormat('latex');
+
+		expect(doc.renderLatex).not.toHaveBeenCalled();
 	});
 });
