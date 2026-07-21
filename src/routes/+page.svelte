@@ -16,7 +16,7 @@
 		convertText,
 		convertFromBinaryFormat,
 		convertToBinaryFormat
-	} from '@brailletools/braille2latex';
+	} from '@brailletools/braille-bridge';
 	import { runOcr } from '$lib/ocr/ocrClient.js';
 	import { createSyncController } from '$lib/sync.svelte.js';
 	import SyncIssues from '$lib/components/SyncIssues.svelte';
@@ -37,7 +37,7 @@
 	const easyapi_url = `${liblouisBase}/${manifest.easyApiFile}`;
 	const tables_url = manifest.tablesDir ? `${liblouisBase}/${manifest.tablesDir}/` : null;
 
-	// Give the braille2latex package its liblouis URLs
+	// Give the braille-bridge package its liblouis URLs
 	configure({
 		liblouisCapiUrl: capi_url,
 		liblouisEasyApiUrl: easyapi_url,
@@ -167,7 +167,7 @@
 
 	// Pandoc conversion state (.tex/.docx uploads only -- .md needs no Pandoc
 	// step, see loadMarkdownFile() below). First use pays pandoc-wasm's ~56MB
-	// lazy-load cost (see @brailletools/braille2latex's src/pandoc.js), hence a
+	// lazy-load cost (see @brailletools/braille-bridge's src/pandoc.js), hence a
 	// dedicated loading message distinct from the OCR one.
 	let pandocLoading = $state(false);
 
@@ -216,7 +216,7 @@
 	}
 
 	/**
-	 * Loads Markdown source directly (no Pandoc needed — braille2latex parses
+	 * Loads Markdown source directly (no Pandoc needed — braille-bridge parses
 	 * Markdown natively, see DualDocument.fromMarkdown()).
 	 * @param {File} file
 	 */
@@ -366,7 +366,7 @@
 					A BRF, BRL, Markdown (.md), LaTeX (.tex), or Word (.docx) file, or one or more photos of a
 					physical braille page (select multiple for a document spanning several pages) — content is
 					converted to braille text automatically. See BRF/BRL syntax requirements <a
-						href="https://github.com/make4all/braille2latex"
+						href="https://github.com/brailletools/braille-bridge"
 						class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
 						>here</a
 					>

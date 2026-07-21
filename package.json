@@ -1,5 +1,5 @@
 {
-	"name": "braille2latex",
+	"name": "webeditor",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
@@ -52,7 +52,7 @@
 		]
 	},
 	"dependencies": {
-		"@brailletools/braille2latex": "file:../braille2latex",
+		"@brailletools/braille-bridge": "file:../braille-bridge",
 		"@brailletools/brailleocr-web": "file:../brailleocr/js",
 		"latex.js": "^0.12.6",
 		"onnxruntime-web": "^1.20.1"

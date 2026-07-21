@@ -11,10 +11,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+      - name: Checkout braille-bridge (pinned release, see braille-bridge.version)
         run: |
-          VERSION=$(cat braille2latex.version)
-          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+          VERSION=$(cat braille-bridge.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille-bridge.git "${{ github.workspace }}/../braille-bridge"
 
       - name: Checkout brailleocr (pinned release, see brailleocr.version)
         run: |

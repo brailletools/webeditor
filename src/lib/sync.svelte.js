@@ -21,13 +21,13 @@
 //    overlapping in-flight translations (e.g. the user tabs to the other pane
 //    and starts typing before the first one resolves) can never mutate the
 //    shared DualDocument concurrently.
-//  - Markdown is never eagerly kept in sync the way LaTeX is (braille2latex's
+//  - Markdown is never eagerly kept in sync the way LaTeX is (braille-bridge's
 //    DualDocument only auto-updates .latexText on every braille edit) —
 //    switching the second pane's format to Markdown, or loading a document,
 //    triggers a one-shot renderMarkdown() call here, not a standing
 //    subscription. See DualDocument's doc comments for why.
 
-import { DualDocument } from '@brailletools/braille2latex';
+import { DualDocument } from '@brailletools/braille-bridge';
 
 const DEBOUNCE_MS = 250;
 

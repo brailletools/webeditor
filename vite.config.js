@@ -15,7 +15,7 @@ export default defineConfig({
 	// wasm reference to point inside .vite/deps/, where the wasm file was never
 	// copied (dev-server-only 404, not reproduced by `vite build`). pandoc-wasm
 	// is excluded for the same class of reason: its browser entry does its own
-	// `await import('./pandoc.wasm')` internally (see braille2latex's src/pandoc.js's doc
+	// `await import('./pandoc.wasm')` internally (see braille-bridge's src/pandoc.js's doc
 	// comment) and is only ever imported dynamically at runtime, on first
 	// actual use — never eagerly, given its ~56MB wasm binary.
 	optimizeDeps: {

@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@brailletools/braille2latex':
-        specifier: file:../braille2latex
-        version: file:../braille2latex
+      '@brailletools/braille-bridge':
+        specifier: file:../braille-bridge
+        version: file:../braille-bridge
       '@brailletools/brailleocr-web':
         specifier: file:../brailleocr/js
         version: file:../brailleocr/js
@@ -123,8 +123,8 @@ packages:
   '@bjorn3/browser_wasi_shim@0.4.2':
     resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
-  '@brailletools/braille2latex@file:../braille2latex':
-    resolution: {directory: ../braille2latex, type: directory}
+  '@brailletools/braille-bridge@file:../braille-bridge':
+    resolution: {directory: ../braille-bridge, type: directory}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1927,7 +1927,7 @@ snapshots:
 
   '@bjorn3/browser_wasi_shim@0.4.2': {}
 
-  '@brailletools/braille2latex@file:../braille2latex':
+  '@brailletools/braille-bridge@file:../braille-bridge':
     dependencies:
       '@brailletools/liblouis-env': https://codeload.github.com/brailletools/liblouis-env/tar.gz/b7de53e203eec2c59b42f3236636da0a4e2bf48a#path:/js/packages/node
       pandoc-wasm: 1.1.0

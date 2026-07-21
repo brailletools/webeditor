@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 const fromBraille = vi.fn();
 const fromMarkdown = vi.fn();
-vi.mock('@brailletools/braille2latex', () => ({
+vi.mock('@brailletools/braille-bridge', () => ({
 	DualDocument: { fromBraille, fromMarkdown }
 }));
 
