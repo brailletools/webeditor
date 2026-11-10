@@ -206,3 +206,96 @@ describe('sync.svelte.js lines-are-paragraphs option', () => {
 		expect(sync.state.ready).toBe(true);
 	});
 });
+
+describe('sync.svelte.js overlapping loads (latest wins)', () => {
+	function deferred() {
+		/** @type {(v: any) => void} */
+		let resolve = () => {};
+		/** @type {(e: any) => void} */
+		let reject = () => {};
+		const promise = new Promise((res, rej) => {
+			resolve = res;
+			reject = rej;
+		});
+		return { promise, resolve, reject };
+	}
+	/** @param {string} text */
+	const docOf = (text) => ({
+		brailleText: text,
+		latexText: 'latex:' + text,
+		renderLatex: async () => 'latex:' + text,
+		renderMarkdown: async () => 'md:' + text,
+		errors: []
+	});
+	/** @param {string} value */
+	const fakeEl = (value) => ({ value, setSelectionRange() {}, selectionStart: 0 });
+
+	// Starts from a committed document (built with the option off), then sets up two
+	// pending rebuilds: A (toggle on) and B (toggle back off).
+	async function setup() {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const brailleEl = fakeEl('seed');
+		const secondEl = fakeEl('');
+		sync.setBrailleEl(brailleEl);
+		sync.setSecondEl(secondEl);
+		fromBraille.mockResolvedValueOnce(docOf('seed'));
+		await sync.loadText('seed');
+
+		const a = deferred();
+		const b = deferred();
+		fromBraille.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+		const toggleOn = sync.setLinesAreParagraphs(true);
+		const toggleOff = sync.setLinesAreParagraphs(false);
+		return { sync, brailleEl, secondEl, a, b, toggleOn, toggleOff };
+	}
+
+	test('an earlier rebuild that finishes AFTER a later one cannot overwrite it', async () => {
+		const { sync, brailleEl, secondEl, a, b, toggleOn, toggleOff } = await setup();
+
+		b.resolve(docOf('from-B'));
+		await toggleOff;
+		expect(brailleEl.value).toBe('from-B');
+		expect(secondEl.value).toBe('latex:from-B');
+
+		a.resolve(docOf('from-A')); // the stale one lands last
+		await toggleOn;
+		expect(brailleEl.value).toBe('from-B');
+		expect(secondEl.value).toBe('latex:from-B');
+		expect(sync.getDoc()?.brailleText).toBe('from-B');
+		expect(sync.state.linesAreParagraphs).toBe(false); // agrees with what's displayed
+	});
+
+	test('the earlier rebuild finishing first is dropped too, not committed then replaced', async () => {
+		const { sync, brailleEl, a, b, toggleOn, toggleOff } = await setup();
+		a.resolve(docOf('from-A'));
+		await toggleOn;
+		expect(brailleEl.value).toBe('seed'); // A was superseded the moment B started
+		b.resolve(docOf('from-B'));
+		await toggleOff;
+		expect(brailleEl.value).toBe('from-B');
+		expect(sync.getDoc()?.brailleText).toBe('from-B');
+	});
+
+	test('if the latest rebuild fails, the setting matches the old document that is still showing', async () => {
+		const { sync, brailleEl, a, b, toggleOn, toggleOff } = await setup();
+		b.reject(new Error('boom'));
+		await toggleOff;
+		expect(sync.state.loadError).toBe('boom');
+		expect(sync.state.linesAreParagraphs).toBe(false); // the seed doc was built with false
+		a.resolve(docOf('from-A'));
+		await toggleOn;
+		expect(brailleEl.value).toBe('seed'); // the stale success didn't sneak in afterwards
+		expect(sync.state.linesAreParagraphs).toBe(false);
+	});
+
+	test('a stale failure arriving after a newer success does not surface an error', async () => {
+		const { sync, a, b, toggleOn, toggleOff } = await setup();
+		b.resolve(docOf('from-B'));
+		await toggleOff;
+		a.reject(new Error('stale boom'));
+		await toggleOn;
+		expect(sync.state.loadError).toBe('');
+		expect(sync.getDoc()?.brailleText).toBe('from-B');
+	});
+});
