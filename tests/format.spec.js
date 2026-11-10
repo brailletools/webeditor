@@ -75,7 +75,7 @@ test.describe('Second-pane format switching', () => {
 		await expect(braillePane).not.toHaveValue(brailleBefore, { timeout: 15000 });
 
 		const braille = await braillePane.inputValue();
-		expect(braille).toMatch(/_\.[^_]*_\./); // BOLD markers
+		expect(braille).toMatch(/\^7[^^]*\^'/); // BOLD passage markers (^7 ... ^')
 	});
 
 	test('an unsupported Markdown construct on upload is flagged, not silently dropped, and "go to" navigates to it', async ({
@@ -153,6 +153,47 @@ test.describe('Second-pane format switching', () => {
 		await expect(braillePane).not.toHaveValue(brailleBefore, { timeout: 45000 });
 
 		const braille = await braillePane.inputValue();
-		expect(braille).toMatch(/_\.[^_]*_\./); // BOLD markers, from \textbf{Hello}
+		expect(braille).toMatch(/\^7[^^]*\^'/); // BOLD passage markers (^7 ... ^'), from \textbf{Hello}
+	});
+});
+
+test.describe('Treat each braille line as a paragraph', () => {
+	test('turning it on puts a paragraph break between lines in LaTeX without changing the braille', async ({
+		page
+	}) => {
+		await page.goto('/');
+		await waitForAppReady(page);
+		await page.locator('#braille-file').setInputFiles({
+			name: 'lines.brf',
+			mimeType: 'text/plain',
+			buffer: Buffer.from('HELLO\nWORLD\n')
+		});
+		const braille = page.locator('#braille-text');
+		const secondPane = page.getByTestId('second-pane-output');
+		await expect(braille).toHaveValue('HELLO\nWORLD\n', { timeout: 15000 });
+
+		// Off by default: a single newline is just a wrapped line, so no paragraph break.
+		const checkbox = page.getByLabel('Treat each braille line as a paragraph');
+		await expect(checkbox).not.toBeChecked();
+		// (to_latex() ends every paragraph with a blank line, so only look *between* content.)
+		const hasParagraphBreak = async () => /\n\s*\n/.test((await secondPane.inputValue()).trim());
+		expect(await hasParagraphBreak()).toBe(false);
+
+		await checkbox.check();
+		await expect.poll(hasParagraphBreak, { timeout: 15000 }).toBe(true);
+		await expect(braille).toHaveValue('HELLO\nWORLD\n'); // braille text untouched
+
+		// ...and it sticks for the next upload.
+		await page.locator('#braille-file').setInputFiles({
+			name: 'more.brf',
+			mimeType: 'text/plain',
+			buffer: Buffer.from('ONE\nTWO\n')
+		});
+		await expect(braille).toHaveValue('ONE\nTWO\n', { timeout: 15000 });
+		await expect.poll(hasParagraphBreak, { timeout: 15000 }).toBe(true);
+		await expect(checkbox).toBeChecked();
+
+		await checkbox.uncheck();
+		await expect.poll(hasParagraphBreak, { timeout: 15000 }).toBe(false);
 	});
 });
