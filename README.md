@@ -20,7 +20,7 @@ in Nemeth format. Try it at https://brailletools.org/
   new paragraph and a single line break is just a wrapped line (right
   for hard-wrapped BRFs). Turn it on for files where every line is its
   own paragraph, so you don't need blank lines between them in the
-  braille. 
+  braille.
 
 Everything runs in the browser; nothing you upload is sent to a server.
 
