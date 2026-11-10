@@ -3,26 +3,6 @@
 const win = /** @type {any} */ (window);
 
 /**
- * Reads a file from an input element and calls a callback with the file's content and name.
- * For BRL files, assumes the content is ASCII braille and passes it through.
- * For BRF files, reads as UTF-8 text.
- * @param {*} event
- * @param {*} callback
- */
-export function handleFileChange(event, callback) {
-	const input = event.target;
-	const file = input?.files?.[0];
-	if (file) {
-		const reader = new FileReader();
-		reader.onload = () => {
-			callback(reader.result, file.name);
-		};
-		// Always read as UTF-8 - works for both BRF and BRL files
-		reader.readAsText(file, 'UTF-8');
-	}
-}
-
-/**
  * Saves a text string as a file with the specified filename.
  * @param {*} text
  * @param {*} filename
@@ -41,29 +21,10 @@ export function downloadText(text, filename) {
 	URL.revokeObjectURL(url);
 }
 
-/**
- * Wraps LaTeX body content in a minimal, compile-ready LaTeX document.
- * Ensures the downloaded file is a complete .tex document.
- * @param {string} content - LaTeX body to place inside the document environment
- * @returns {string} - Complete LaTeX document
- */
-export function wrapLatexDocument(content) {
-	const body = (content ?? '').trim();
-	// If the body is an error message, comment it out to avoid compilation failure
-	const safeBody = body.startsWith('Error') ? `% ${body}` : body;
-	return [
-		'\\documentclass[fleqn]{article}',
-		'\\usepackage[utf8]{inputenc}',
-		'\\usepackage{amsmath}',
-		'\\usepackage{amssymb}',
-		'% Remove left indentation for display math to fully left-justify',
-		'\\setlength{\\mathindent}{0pt}',
-		'\\begin{document}',
-		safeBody || '% Empty document',
-		'\\end{document}',
-		''
-	].join('\n');
-}
+// The complete-document template lives in braille-bridge (shared with its CLI's
+// --full-doc) -- it requests a tagged PDF/UA-2 PDF; see src/latexDocument.js there
+// for what it emits and why. Re-exported so callers keep importing it from here.
+export { wrapLatexDocument } from '@brailletools/braille-bridge';
 
 /**
  * Wraps LaTeX body content for browser-based rendering with latex.js.

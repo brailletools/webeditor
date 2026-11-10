@@ -35,6 +35,10 @@ export function createSyncController({ table: initialTable, translate, translate
 	let table = initialTable;
 	const state = $state({
 		format: 'latex', // 'latex' | 'markdown' — which format the second pane shows
+		// false: a blank line ends a paragraph (single newlines are just wrapped lines,
+		// right for hard-wrapped BRFs). true: every braille line is its own paragraph,
+		// so no blank lines are needed -- see braille-bridge's lex() `linesAreParagraphs`.
+		linesAreParagraphs: false,
 		issues: [],
 		ready: false,
 		loadError: ''
@@ -138,7 +142,8 @@ export function createSyncController({ table: initialTable, translate, translate
 			newDoc = await DualDocument.fromBraille(text, {
 				table: newTable ?? table,
 				translate,
-				translateForward
+				translateForward,
+				linesAreParagraphs: state.linesAreParagraphs
 			});
 		} catch (error) {
 			state.loadError = error?.message ?? String(error);
@@ -160,13 +165,33 @@ export function createSyncController({ table: initialTable, translate, translate
 			newDoc = await DualDocument.fromMarkdown(text, {
 				table: newTable ?? table,
 				translate,
-				translateForward
+				translateForward,
+				linesAreParagraphs: state.linesAreParagraphs
 			});
 		} catch (error) {
 			state.loadError = error?.message ?? String(error);
 			return;
 		}
 		await finishLoad(newDoc, newTable);
+	}
+
+	/**
+	 * Turns "each braille line is a paragraph" on or off. The paragraph structure is
+	 * baked into the document when it's built (it decides where paragraph ranges and
+	 * separators fall), so this rebuilds from the braille pane's current text --
+	 * the same "equivalent to a fresh load" approach a table change uses -- rather
+	 * than trying to patch the existing document. The braille text itself is never
+	 * modified. If the rebuild fails, the old setting (and last-known-good document)
+	 * is kept.
+	 * @param {boolean} value
+	 */
+	async function setLinesAreParagraphs(value) {
+		if (value === state.linesAreParagraphs) return;
+		const previous = state.linesAreParagraphs;
+		state.linesAreParagraphs = value;
+		if (!doc || !brailleEl) return; // nothing built yet: the next load picks it up
+		await loadText(brailleEl.value);
+		if (state.loadError) state.linesAreParagraphs = previous;
 	}
 
 	/**
@@ -307,6 +332,7 @@ export function createSyncController({ table: initialTable, translate, translate
 		loadText,
 		loadMarkdown,
 		setFormat,
+		setLinesAreParagraphs,
 		handleBrailleInput,
 		handleSecondInput,
 		handleBrailleBlur,

@@ -129,3 +129,80 @@ describe('sync.svelte.js format switching', () => {
 		expect(doc.renderLatex).not.toHaveBeenCalled();
 	});
 });
+
+describe('sync.svelte.js lines-are-paragraphs option', () => {
+	function mockDoc(text = 'AA\nBB') {
+		return {
+			brailleText: text,
+			latexText: 'x',
+			renderLatex: async () => 'x',
+			renderMarkdown: async () => 'x',
+			errors: []
+		};
+	}
+	/** @param {string} value */
+	const fakeEl = (value) => ({ value, setSelectionRange() {}, selectionStart: 0 });
+
+	test('defaults to off and is passed to both loaders', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		expect(sync.state.linesAreParagraphs).toBe(false);
+
+		fromBraille.mockResolvedValue(mockDoc());
+		await sync.loadText('AA');
+		expect(fromBraille.mock.lastCall?.[1]?.linesAreParagraphs).toBe(false);
+
+		fromMarkdown.mockResolvedValue(mockDoc());
+		await sync.loadMarkdown('# hi');
+		expect(fromMarkdown.mock.lastCall?.[1]?.linesAreParagraphs).toBe(false);
+	});
+
+	test('turning it on rebuilds the document from the braille pane text with the option set, and later loads keep it', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		const brailleEl = fakeEl('AA\nBB');
+		sync.setBrailleEl(brailleEl);
+		sync.setSecondEl(fakeEl(''));
+
+		fromBraille.mockResolvedValue(mockDoc());
+		await sync.loadText('AA\nBB');
+		fromBraille.mockClear();
+
+		await sync.setLinesAreParagraphs(true);
+		expect(sync.state.linesAreParagraphs).toBe(true);
+		expect(fromBraille).toHaveBeenCalledTimes(1);
+		expect(fromBraille.mock.calls[0][0]).toBe('AA\nBB'); // the pane's own text, untouched
+		expect(fromBraille.mock.calls[0][1].linesAreParagraphs).toBe(true);
+
+		// A later upload goes through loadText() and must keep the setting.
+		await sync.loadText('CC');
+		expect(fromBraille.mock.lastCall?.[1]?.linesAreParagraphs).toBe(true);
+	});
+
+	test('setting the value it already has does not rebuild anything', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		sync.setBrailleEl(fakeEl('AA'));
+		sync.setSecondEl(fakeEl(''));
+		fromBraille.mockResolvedValue(mockDoc());
+		await sync.loadText('AA');
+		fromBraille.mockClear();
+		await sync.setLinesAreParagraphs(false);
+		expect(fromBraille).not.toHaveBeenCalled();
+	});
+
+	test('if the rebuild fails, the old setting and last-known-good document are kept', async () => {
+		const { createSyncController } = await import('./sync.svelte.js');
+		const sync = createSyncController({ table: 'en-ueb-g2.ctb' });
+		sync.setBrailleEl(fakeEl('AA'));
+		sync.setSecondEl(fakeEl(''));
+		fromBraille.mockResolvedValueOnce(mockDoc());
+		await sync.loadText('AA');
+
+		fromBraille.mockRejectedValueOnce(new Error('boom'));
+		await sync.setLinesAreParagraphs(true);
+		expect(sync.state.linesAreParagraphs).toBe(false); // reverted
+		expect(sync.state.loadError).toBe('boom');
+		expect(sync.state.ready).toBe(true);
+	});
+});

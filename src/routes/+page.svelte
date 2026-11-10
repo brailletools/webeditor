@@ -2,7 +2,6 @@
 	// @ts-nocheck
 	import sample from '$lib/Sample Quiz.brf?raw';
 	import {
-		handleFileChange,
 		downloadText,
 		downloadBlob,
 		wrapLatexDocument,
@@ -96,6 +95,15 @@
 		// Rebuild from the braille pane's current content under the new table —
 		// equivalent to a fresh load, not an incremental edit.
 		await sync.loadText(brailleEl.value, selectedTable);
+	}
+
+	async function handleLinesAreParagraphsChange(event) {
+		if (!sync.state.ready) return;
+		const checkbox = event.currentTarget;
+		await sync.setLinesAreParagraphs(checkbox.checked);
+		// The controller keeps the old setting if the rebuild failed -- make the
+		// checkbox show what's actually in effect rather than what was clicked.
+		checkbox.checked = sync.state.linesAreParagraphs;
 	}
 
 	async function handleFormatChange() {
@@ -192,9 +200,16 @@
 		return file.name.toLowerCase().endsWith('.docx');
 	}
 
-	/** @param {string} name */
+	/**
+	 * Filename without its last extension. A name with no extension ("README") or
+	 * only a leading dot (".brf") is returned whole rather than as '' -- otherwise
+	 * downloads came out named just ".tex" -- and a truly empty name falls back to
+	 * 'document'.
+	 * @param {string} name
+	 */
 	function stripExtension(name) {
-		return name.split('.').slice(0, -1).join('.');
+		const dot = name.lastIndexOf('.');
+		return (dot > 0 ? name.slice(0, dot) : name) || 'document';
 	}
 
 	/** @param {string} name @param {string} ext */
@@ -203,16 +218,27 @@
 	}
 
 	/**
+	 * Reads a text file (always as UTF-8 -- works for both BRF and BRL, and strips a
+	 * BOM) and hands its content to `load`, then updates the download filename if
+	 * the load succeeded. file.text() returns a real promise, so callers that
+	 * `await` this actually wait for the file to be read and loaded -- the earlier
+	 * FileReader-callback version returned before either happened.
+	 * @param {File} file
+	 * @param {(text: string) => Promise<void>} load
+	 */
+	async function loadTextFile(file, load) {
+		await load(await file.text());
+		if (!sync.state.loadError) {
+			filename = stripExtension(file.name) + '.tex';
+		}
+	}
+
+	/**
 	 * Loads a .brf/.brl file as braille source text (the original upload path).
 	 * @param {File} file
 	 */
-	async function loadBrailleFile(file) {
-		handleFileChange({ target: { files: [file] } }, async (result, fname) => {
-			await sync.loadText(result);
-			if (!sync.state.loadError) {
-				filename = stripExtension(fname) + '.tex';
-			}
-		});
+	function loadBrailleFile(file) {
+		return loadTextFile(file, (text) => sync.loadText(text));
 	}
 
 	/**
@@ -220,13 +246,8 @@
 	 * Markdown natively, see DualDocument.fromMarkdown()).
 	 * @param {File} file
 	 */
-	async function loadMarkdownFile(file) {
-		handleFileChange({ target: { files: [file] } }, async (result, fname) => {
-			await sync.loadMarkdown(result);
-			if (!sync.state.loadError) {
-				filename = stripExtension(fname) + '.tex';
-			}
-		});
+	function loadMarkdownFile(file) {
+		return loadTextFile(file, (text) => sync.loadMarkdown(text));
 	}
 
 	/**
@@ -325,7 +346,7 @@
 				pageTexts.push(unicodeBraille);
 			}
 			await sync.loadText(braille2Ascii(pageTexts.join('\n\n')));
-			filename = pages[0].name.split('.').slice(0, -1).join('.') + '.tex';
+			filename = stripExtension(pages[0].name) + '.tex';
 		} catch (err) {
 			ocrError = err?.message ?? 'OCR failed.';
 		} finally {
@@ -404,6 +425,28 @@
 				</select>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300">
 					Used for translation between braille and LaTeX.
+				</p>
+			</div>
+			<div class="pb-4 px-4">
+				<label
+					for="lines-are-paragraphs"
+					class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white"
+				>
+					<input
+						id="lines-are-paragraphs"
+						type="checkbox"
+						checked={sync.state.linesAreParagraphs}
+						onchange={handleLinesAreParagraphsChange}
+						disabled={!sync.state.ready}
+						aria-describedby="lines-are-paragraphs-help"
+						class="h-4 w-4"
+					/>
+					Treat each braille line as a paragraph
+				</label>
+				<p id="lines-are-paragraphs-help" class="mt-1 text-sm text-gray-500 dark:text-gray-300">
+					Off: a blank line starts a new paragraph, and a single line break is just a wrapped line.
+					On: every line is its own paragraph, so you don't need blank lines between them in the
+					braille. Your braille text is not changed either way.
 				</p>
 			</div>
 
@@ -529,7 +572,9 @@
 									// renderLatex(), not the .latexText getter -- the latter can be
 									// stale if the most recent edit came through the Markdown pane
 									// (see DualDocument's doc comments).
-									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '');
+									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '', {
+										title: stripExtension(filename)
+									});
 									if (!isCompleteLatexDocument(complete)) {
 										console.warn('[download] Wrapped LaTeX document may be incomplete');
 									}
@@ -597,7 +642,9 @@
 								htmlError = '';
 								htmlLoading = true;
 								try {
-									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '');
+									const complete = wrapLatexDocument((await sync.getDoc()?.renderLatex()) ?? '', {
+										title: stripExtension(filename)
+									});
 									await compileToHTML(complete);
 								} catch (err) {
 									htmlError = err?.message ?? 'HTML conversion failed.';
