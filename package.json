@@ -1,7 +1,7 @@
 {
 	"name": "webeditor",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.2.0",
 	"type": "module",
 	"scripts": {
 		"dev": "liblouis-fetch-web static/liblouis && node scripts/fetch-models.mjs && vite dev",
