@@ -23,6 +23,10 @@ jobs:
         with:
           fetch-depth: 0 # need main's history to check the tag is on it
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Validate tag
         run: |
           set -euo pipefail
