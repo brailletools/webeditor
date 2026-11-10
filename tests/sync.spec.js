@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 
 /** @param {import('@playwright/test').Page} page */
 async function waitForAppReady(page) {
-	const output = page.getByTestId('latex-output');
+	const output = page.getByTestId('second-pane-output');
 	await expect(output).toBeEnabled({ timeout: 15000 });
 	await expect(output).not.toHaveValue('', { timeout: 15000 });
 }
@@ -32,7 +32,7 @@ test.describe('Bidirectional sync', () => {
 		await uploadBrf(page, 'HELLO\n\nWORLD');
 
 		const braillePane = page.locator('#braille-text');
-		const latexPane = page.getByTestId('latex-output');
+		const latexPane = page.getByTestId('second-pane-output');
 		const latexBefore = await latexPane.inputValue();
 
 		// Append inside the second paragraph only, well clear of the paragraph break.
@@ -50,7 +50,7 @@ test.describe('Bidirectional sync', () => {
 		await uploadBrf(page, '_%3+4_:');
 
 		const braillePane = page.locator('#braille-text');
-		const latexPane = page.getByTestId('latex-output');
+		const latexPane = page.getByTestId('second-pane-output');
 		const brailleBefore = await braillePane.inputValue();
 
 		const latexBefore = await latexPane.inputValue();
@@ -68,7 +68,7 @@ test.describe('Bidirectional sync', () => {
 		await uploadBrf(page, '_%3+4_:');
 
 		const braillePane = page.locator('#braille-text');
-		const latexPane = page.getByTestId('latex-output');
+		const latexPane = page.getByTestId('second-pane-output');
 		const brailleBefore = await braillePane.inputValue();
 		const latexBefore = await latexPane.inputValue();
 
@@ -93,7 +93,7 @@ test.describe('Bidirectional sync', () => {
 		await uploadBrf(page, 'HELLO\n\nWORLD');
 
 		const braillePane = page.locator('#braille-text');
-		const latexPane = page.getByTestId('latex-output');
+		const latexPane = page.getByTestId('second-pane-output');
 
 		// Kick off a braille edit (schedules a debounced -> latex update), then
 		// immediately move focus into the LaTeX pane and type there before that

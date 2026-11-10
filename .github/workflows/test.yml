@@ -5,14 +5,16 @@ on:
 
 jobs:
   a11y:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.57 can't install
+    # chromium on. Revisit when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+      - name: Checkout braille-bridge (pinned release, see braille-bridge.version)
         run: |
-          VERSION=$(cat braille2latex.version)
-          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+          VERSION=$(cat braille-bridge.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille-bridge.git "${{ github.workspace }}/../braille-bridge"
 
       - name: Checkout brailleocr (pinned release, see brailleocr.version)
         run: |
@@ -37,14 +39,16 @@ jobs:
         run: pnpm run test:a11y
 
   sync:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.57 can't install
+    # chromium on. Revisit when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+      - name: Checkout braille-bridge (pinned release, see braille-bridge.version)
         run: |
-          VERSION=$(cat braille2latex.version)
-          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+          VERSION=$(cat braille-bridge.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille-bridge.git "${{ github.workspace }}/../braille-bridge"
 
       - name: Checkout brailleocr (pinned release, see brailleocr.version)
         run: |
@@ -73,10 +77,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout braille2latex (pinned release, see braille2latex.version)
+      - name: Checkout braille-bridge (pinned release, see braille-bridge.version)
         run: |
-          VERSION=$(cat braille2latex.version)
-          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille2latex.git "${{ github.workspace }}/../braille2latex"
+          VERSION=$(cat braille-bridge.version)
+          git clone --branch "$VERSION" --depth 1 https://github.com/brailletools/braille-bridge.git "${{ github.workspace }}/../braille-bridge"
 
       - name: Checkout brailleocr (pinned release, see brailleocr.version)
         run: |

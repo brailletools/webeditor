@@ -1,10 +1,17 @@
 <script>
 	// Persistent list of paragraphs/equations currently out of sync between the
-	// braille and LaTeX panes. Always rendered (not display:none when empty) so it
-	// doesn't have to be independently discovered — see the side-by-side sync plan's
-	// error-handling section. Reflects current issues only; an entry disappears the
-	// instant that node resyncs, no resolved-issues history is kept.
-	let { issues = [], onGoTo } = $props();
+	// braille and second (LaTeX or Markdown) panes, plus any paragraph
+	// fromMarkdown() couldn't semantically parse on import (flagged
+	// 'unsupported', not just live-edit 'error' — see DualDocument.errors'
+	// doc comment). Always rendered (not display:none when empty) so it
+	// doesn't have to be independently discovered — see the side-by-side sync
+	// plan's error-handling section. Reflects current issues only; an entry
+	// disappears the instant that node resyncs, no resolved-issues history is
+	// kept.
+	let { issues = [], secondPaneLabel = 'LaTeX', onGoTo } = $props();
+
+	/** @type {Record<string, string>} */
+	const PANE_LABELS = { latex: 'LaTeX', markdown: 'Markdown', braille: 'Braille' };
 </script>
 
 <section
@@ -14,7 +21,7 @@
 	<h3 class="text-lg font-medium dark:text-gray-100 mb-2">Sync issues</h3>
 	{#if issues.length === 0}
 		<p class="text-sm text-gray-500 dark:text-gray-300">
-			No sync issues — braille and LaTeX are in sync.
+			No sync issues — braille and {secondPaneLabel} are in sync.
 		</p>
 	{:else}
 		<ul class="space-y-1">
@@ -26,7 +33,7 @@
 						onclick={() => onGoTo?.(issue)}
 					>
 						<span class="font-medium">{issue.label}</span>
-						({issue.pane === 'latex' ? 'LaTeX' : 'Braille'} pane): {issue.message}
+						({PANE_LABELS[issue.pane] ?? issue.pane} pane): {issue.message}
 					</button>
 				</li>
 			{/each}
