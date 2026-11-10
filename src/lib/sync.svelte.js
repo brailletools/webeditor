@@ -109,47 +109,82 @@ export function createSyncController({ table: initialTable, translate, translate
 			: await targetDoc.renderLatex();
 	}
 
-	// Shared tail of loadText()/loadMarkdown(): once a new DualDocument has been
-	// built (however its source format got there), push braille + the current
-	// second-pane format into both panes. A whole-document replacement, not an
-	// incremental edit — no focus-guard subtlety needed, both panes are simply
-	// overwritten (matches handleTableChange()'s existing "equivalent to a
-	// fresh load" pattern in +page.svelte).
-	async function finishLoad(newDoc, newTable) {
+	// Every load (a braille upload, a Markdown/Word upload, a table change, the
+	// lines-are-paragraphs toggle) builds a new document asynchronously and then
+	// replaces the whole document and both panes with it. Two of those can overlap --
+	// e.g. the toggle clicked twice quickly, or flipped during an upload -- and the
+	// one that STARTED earlier can finish later. Without a guard it would commit last
+	// and clobber the newer load's result, leaving the panes built from the old setting
+	// while the checkbox/state show the new one. So each load takes a ticket, and only
+	// the most recently started load is allowed to commit; an older one that finishes
+	// late is dropped, including its error (a stale failure must not surface after a
+	// newer load has already replaced it).
+	let loadSeq = 0;
+	// The linesAreParagraphs setting the *current* document was actually built with.
+	let committedLinesAreParagraphs = false;
+
+	/**
+	 * Builds a new document, then -- if no newer load has started meanwhile --
+	 * commits it: pushes braille + the current second-pane format into both panes (a
+	 * whole-document replacement, not an incremental edit, so no focus-guard subtlety
+	 * -- matches handleTableChange()'s "equivalent to a fresh load" pattern in
+	 * +page.svelte). The document is built before anything is touched, so a failure
+	 * (invalid content, liblouis failure) leaves the last-known-good doc/panes/table
+	 * untouched instead of leaving state.ready stuck or the panes out of sync with
+	 * `table`.
+	 * @param {(linesAreParagraphs: boolean) => Promise<any>} buildDoc
+	 * @param {string} [newTable]
+	 * @returns {Promise<'committed' | 'failed' | 'superseded'>}
+	 */
+	async function runLoad(buildDoc, newTable) {
+		const mySeq = ++loadSeq;
+		const lines = state.linesAreParagraphs;
+		let newDoc;
+		try {
+			newDoc = await buildDoc(lines);
+		} catch (error) {
+			if (mySeq !== loadSeq) return 'superseded';
+			state.loadError = error?.message ?? String(error);
+			// The old document is still what's showing, so the setting must describe
+			// *it* -- not a toggle that was meant to rebuild it and failed to.
+			state.linesAreParagraphs = committedLinesAreParagraphs;
+			return 'failed';
+		}
+		// Render before committing anything, so the commit below is one synchronous
+		// step with no await in the middle for another load to interleave with.
+		const secondText = await renderSecondPaneText(newDoc);
+		if (mySeq !== loadSeq) return 'superseded';
+
 		if (newTable) table = newTable;
 		doc = newDoc;
+		committedLinesAreParagraphs = lines;
 		state.loadError = '';
 		refreshIssues();
 		writeToPane(brailleEl, doc.brailleText);
-		writeToPane(secondEl, await renderSecondPaneText(doc));
+		writeToPane(secondEl, secondText);
 		state.ready = true;
+		return 'committed';
 	}
 
 	/**
 	 * (Re)build the document from braille source and push it into both panes —
 	 * used for the initial sample load, the .brf/.brl upload branch, and table
-	 * changes.
+	 * changes. Callers invoke this from effects and event handlers, some without
+	 * awaiting (the initial sample load, the upload branch) -- failures are caught
+	 * and surfaced via state.loadError rather than rejecting, since an unhandled
+	 * rejection there would surface nowhere.
 	 */
 	async function loadText(text, newTable) {
-		// Callers invoke this from effects and event handlers, some without awaiting
-		// (the initial sample load, the .brf/.brl upload branch) -- an unhandled
-		// rejection here would otherwise surface nowhere. Build the new document
-		// before committing anything, so a failure (invalid content, liblouis
-		// failure) leaves the last-known-good doc/panes/table untouched instead of
-		// leaving state.ready stuck or the panes out of sync with `table`.
-		let newDoc;
-		try {
-			newDoc = await DualDocument.fromBraille(text, {
-				table: newTable ?? table,
-				translate,
-				translateForward,
-				linesAreParagraphs: state.linesAreParagraphs
-			});
-		} catch (error) {
-			state.loadError = error?.message ?? String(error);
-			return;
-		}
-		await finishLoad(newDoc, newTable);
+		await runLoad(
+			(linesAreParagraphs) =>
+				DualDocument.fromBraille(text, {
+					table: newTable ?? table,
+					translate,
+					translateForward,
+					linesAreParagraphs
+				}),
+			newTable
+		);
 	}
 
 	/**
@@ -160,19 +195,16 @@ export function createSyncController({ table: initialTable, translate, translate
 	 * the initial braille got there.
 	 */
 	async function loadMarkdown(text, newTable) {
-		let newDoc;
-		try {
-			newDoc = await DualDocument.fromMarkdown(text, {
-				table: newTable ?? table,
-				translate,
-				translateForward,
-				linesAreParagraphs: state.linesAreParagraphs
-			});
-		} catch (error) {
-			state.loadError = error?.message ?? String(error);
-			return;
-		}
-		await finishLoad(newDoc, newTable);
+		await runLoad(
+			(linesAreParagraphs) =>
+				DualDocument.fromMarkdown(text, {
+					table: newTable ?? table,
+					translate,
+					translateForward,
+					linesAreParagraphs
+				}),
+			newTable
+		);
 	}
 
 	/**
@@ -181,17 +213,23 @@ export function createSyncController({ table: initialTable, translate, translate
 	 * separators fall), so this rebuilds from the braille pane's current text --
 	 * the same "equivalent to a fresh load" approach a table change uses -- rather
 	 * than trying to patch the existing document. The braille text itself is never
-	 * modified. If the rebuild fails, the old setting (and last-known-good document)
-	 * is kept.
+	 * modified. Safe to call repeatedly/concurrently: only the latest rebuild commits
+	 * (see runLoad()). If the rebuild fails, the setting goes back to what the
+	 * still-displayed document was built with.
 	 * @param {boolean} value
 	 */
 	async function setLinesAreParagraphs(value) {
 		if (value === state.linesAreParagraphs) return;
-		const previous = state.linesAreParagraphs;
 		state.linesAreParagraphs = value;
 		if (!doc || !brailleEl) return; // nothing built yet: the next load picks it up
-		await loadText(brailleEl.value);
-		if (state.loadError) state.linesAreParagraphs = previous;
+		await runLoad((linesAreParagraphs) =>
+			DualDocument.fromBraille(brailleEl.value, {
+				table,
+				translate,
+				translateForward,
+				linesAreParagraphs
+			})
+		);
 	}
 
 	/**
