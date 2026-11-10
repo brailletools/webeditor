@@ -5,7 +5,9 @@ on:
 
 jobs:
   a11y:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.57 can't install
+    # chromium on. Revisit when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +39,9 @@ jobs:
         run: pnpm run test:a11y
 
   sync:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.57 can't install
+    # chromium on. Revisit when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 

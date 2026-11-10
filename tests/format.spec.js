@@ -118,7 +118,6 @@ test.describe('Second-pane format switching', () => {
 		await waitForAppReady(page);
 
 		const braillePane = page.locator('#braille-text');
-		const secondPane = page.getByTestId('second-pane-output');
 
 		await braillePane.click();
 		await braillePane.evaluate((el) => el.setSelectionRange(3, 3));
