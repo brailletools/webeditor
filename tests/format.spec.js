@@ -197,3 +197,66 @@ test.describe('Treat each braille line as a paragraph', () => {
 		await expect.poll(hasParagraphBreak, { timeout: 15000 }).toBe(false);
 	});
 });
+
+test.describe('Settings dialog', () => {
+	test('opens as a modal with the table and NVDA help, and returns focus when closed', async ({
+		page
+	}) => {
+		await page.goto('/');
+		await waitForAppReady(page);
+		await expect(page.getByLabel('Braille table')).toBeHidden();
+
+		const opener = page.getByRole('button', { name: 'Settings' });
+		await opener.press('Enter');
+		const dialog = page.getByRole('dialog', { name: 'Settings' });
+		await expect(dialog).toBeVisible();
+		await expect(dialog.getByLabel('Braille table')).toBeFocused();
+		await expect(dialog.getByText('Using NVDA with a braille display?')).toBeVisible();
+
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeHidden();
+		await expect(opener).toBeFocused();
+
+		await opener.click();
+		await dialog.getByRole('button', { name: 'Close' }).click();
+		await expect(dialog).toBeHidden();
+	});
+});
+
+test.describe('HTML preview', () => {
+	test('renders math as MathML, follows braille edits, and switches back to LaTeX', async ({
+		page
+	}) => {
+		await page.goto('/');
+		await waitForAppReady(page);
+		const latexPane = page.getByTestId('second-pane-output');
+		const latexBefore = await latexPane.inputValue();
+
+		await page.selectOption('#second-pane-format', 'html');
+		const preview = page.getByTestId('html-preview');
+		await expect(preview.locator('math').first()).toBeAttached();
+		await expect(latexPane).toBeHidden();
+
+		const braille = page.locator('#braille-text');
+		await braille.fill('zebra\n\n_%x .k 2_:');
+		await expect(preview).toContainText('zebra', { timeout: 15000 });
+		await expect(preview.locator('math')).toHaveCount(1);
+
+		await braille.press('Control+Alt+j');
+		await expect(preview).toBeFocused();
+		await preview.press('Control+Alt+j');
+		await expect(braille).toBeFocused();
+
+		await page.selectOption('#second-pane-format', 'latex');
+		await expect(preview).toHaveCount(0);
+		await expect(latexPane).toHaveValue(/x = 2/);
+		await expect(latexPane).not.toHaveValue(latexBefore);
+	});
+});
+
+test('the footer says which versions are running', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByTestId('version-info')).toHaveText(
+		/Web editor \d+\.\d+\.\d+.*braille-bridge\s+\d+\.\d+\.\d+/
+	);
+});

@@ -1,1 +1,20 @@
 @import 'tailwindcss';
+
+/* Rendered document in the HTML view: restore the defaults Tailwind's reset removes. */
+.html-preview {
+	font-family: serif;
+	line-height: 1.5;
+}
+.html-preview :where(h1, h2, h3, h4) {
+	font-size: revert;
+	font-weight: revert;
+	margin: revert;
+}
+.html-preview :where(p) {
+	margin: 0.75em 0;
+}
+.html-preview :where(ul, ol) {
+	list-style: revert;
+	margin: revert;
+	padding: revert;
+}
