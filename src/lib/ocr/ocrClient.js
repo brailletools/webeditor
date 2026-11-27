@@ -35,13 +35,15 @@ function getWorker() {
 let inFlight = false;
 
 /**
- * Runs the full OCR pipeline on an uploaded image file and resolves to
- * Unicode braille text (one line per detected text line, spaces inferred).
+ * Runs the full OCR pipeline on an uploaded image file. Resolves to Unicode
+ * braille text (one line per detected text line, spaces inferred) and the
+ * clockwise turn, in degrees, applied to the photo before reading it.
  * @param {File} file
- * @param {{confThreshold?: number, onProgress?: (stage: string) => void}} [opts]
- * @returns {Promise<string>}
+ * @param {{confThreshold?: number, rotation?: 'auto'|0|90|180|270,
+ *          onProgress?: (stage: string) => void}} [opts]
+ * @returns {Promise<{unicodeBraille: string, rotation: 0|90|180|270}>}
  */
-export function runOcr(file, { confThreshold = 0.15, onProgress } = {}) {
+export function runOcr(file, { confThreshold = 0.15, rotation = 'auto', onProgress } = {}) {
 	if (inFlight) {
 		return Promise.reject(
 			new Error('OCR is already running; wait for it to finish before starting another.')
@@ -65,7 +67,8 @@ export function runOcr(file, { confThreshold = 0.15, onProgress } = {}) {
 				onProgress?.(event.data.stage);
 			} else if (type === 'result') {
 				cleanup();
-				resolve(event.data.unicodeBraille);
+				const { unicodeBraille, rotation } = event.data;
+				resolve({ unicodeBraille, rotation });
 			} else if (type === 'error') {
 				cleanup();
 				reject(new Error(event.data.message));
@@ -84,7 +87,8 @@ export function runOcr(file, { confThreshold = 0.15, onProgress } = {}) {
 			file,
 			detectorUrl: `${modelsBase}cell_detector.onnx`,
 			classifierUrl: `${modelsBase}cell_classifier.onnx`,
-			confThreshold
+			confThreshold,
+			rotation
 		});
 	});
 }

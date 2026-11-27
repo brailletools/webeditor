@@ -4,6 +4,16 @@
 // available — no DOM dependency, matching brailleocr-web's own imageOps.js.
 
 /**
+ * Whether a file is an HEIC/HEIF photo (the iPhone's default format). Most browsers
+ * other than Safari cannot decode these, and say only that the image couldn't be decoded.
+ * @param {File|Blob} fileOrBlob
+ */
+export function isHeic(fileOrBlob) {
+	const name = 'name' in fileOrBlob ? String(fileOrBlob.name) : '';
+	return /^image\/hei[cf]/i.test(fileOrBlob.type) || /\.hei[cf]$/i.test(name);
+}
+
+/**
  * @param {File|Blob} fileOrBlob
  * @returns {Promise<{rgb: Float32Array, width: number, height: number}>}
  */
@@ -13,7 +23,16 @@ export async function decodeImageToRgbHwc(fileOrBlob) {
 	// and the detector/classifier were tuned against EXIF-respecting decoding
 	// (see brailleocr's own test harness, which uses sharp's equivalent
 	// `.rotate()` with no args for the same reason).
-	const bitmap = await createImageBitmap(fileOrBlob, { imageOrientation: 'from-image' });
+	let bitmap;
+	try {
+		bitmap = await createImageBitmap(fileOrBlob, { imageOrientation: 'from-image' });
+	} catch (error) {
+		throw isHeic(fileOrBlob)
+			? new Error(
+					"This browser can't open HEIC photos. Open the editor in Safari, or export the photo as a JPEG and upload that."
+				)
+			: error;
+	}
 
 	const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
 	const ctx = canvas.getContext('2d');
