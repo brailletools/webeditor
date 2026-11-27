@@ -1,5 +1,6 @@
 <script>
 	// @ts-nocheck
+	import { tick } from 'svelte';
 	import sample from '$lib/Sample Quiz.brf?raw';
 	import {
 		downloadText,
@@ -181,8 +182,95 @@
 	const ocrStageLabels = {
 		decoding: 'Reading photo…',
 		detecting: 'Finding braille cells…',
+		orienting: 'Checking which way up the page is…',
 		classifying: 'Reading dot patterns…'
 	};
+
+	// The photos behind the current document, each with the clockwise turn used to
+	// read it and the text that reading produced, so one page can be turned and
+	// re-read without redoing the others. Empty unless the document came from OCR.
+	/** @type {Array<{file: File, rotation: number, text: string}>} */
+	let ocrPages = $state.raw([]);
+	let ocrSummary = $state('');
+	// The braille pane's contents right after the last OCR load, to tell whether
+	// re-reading would overwrite edits.
+	let ocrLoadedBraille = '';
+
+	function clearOcrPages() {
+		ocrPages = [];
+		ocrSummary = '';
+	}
+
+	/** @param {number} degrees */
+	function describeRotation(degrees) {
+		if (degrees === 0) return 'read as taken';
+		if (degrees === 180) return 'turned upside down';
+		return `turned ${degrees} degrees clockwise`;
+	}
+
+	/**
+	 * @param {File} file
+	 * @param {'auto' | number} rotation
+	 * @param {string} progressPrefix
+	 */
+	async function readPhoto(file, rotation, progressPrefix) {
+		ocrPageProgress = progressPrefix;
+		const result = await runOcr(file, {
+			rotation,
+			onProgress: (stage) => {
+				ocrStage = stage;
+			}
+		});
+		return { file, rotation: result.rotation, text: result.unicodeBraille };
+	}
+
+	/** @param {Array<{file: File, rotation: number, text: string}>} pages */
+	async function loadOcrPages(pages) {
+		await sync.loadText(braille2Ascii(pages.map((p) => p.text).join('\n\n')));
+		if (sync.state.loadError) return false;
+		ocrPages = pages;
+		ocrLoadedBraille = brailleEl?.value ?? '';
+		return true;
+	}
+
+	/**
+	 * Turns one photo a further quarter turn clockwise and reads it again.
+	 * @param {number} index
+	 * @param {HTMLButtonElement} button
+	 */
+	async function rotatePage(index, button) {
+		if (ocrLoading) return;
+		if (
+			brailleEl &&
+			brailleEl.value !== ocrLoadedBraille &&
+			!window.confirm(
+				'Reading the photo again will replace the document, including your edits. Continue?'
+			)
+		) {
+			return;
+		}
+
+		const page = ocrPages[index];
+		ocrError = '';
+		ocrSummary = '';
+		ocrLoading = true;
+		try {
+			const turned = await readPhoto(page.file, (page.rotation + 90) % 360, '');
+			const pages = ocrPages.map((p, i) => (i === index ? turned : p));
+			if (await loadOcrPages(pages)) {
+				ocrSummary = `${page.file.name} ${describeRotation(turned.rotation)} and read again.`;
+			}
+		} catch (err) {
+			ocrError = err?.message ?? 'OCR failed.';
+		} finally {
+			ocrLoading = false;
+			ocrStage = '';
+			ocrPageProgress = '';
+			// The button was disabled while reading, which drops keyboard focus.
+			await tick();
+			button.focus();
+		}
+	}
 
 	// Pandoc conversion state (.tex/.docx uploads only -- .md needs no Pandoc
 	// step, see loadMarkdownFile() below). First use pays pandoc-wasm's ~56MB
@@ -311,6 +399,9 @@
 		ocrStage = '';
 		ocrPageProgress = '';
 
+		// Whatever is chosen replaces the document, so the old photos no longer apply.
+		clearOcrPages();
+
 		const textFile = files.find(isBrailleTextFile);
 		if (textFile) {
 			// loadText() catches its own failures and surfaces them via
@@ -337,7 +428,7 @@
 			return;
 		}
 
-		const pages = files.sort((a, b) =>
+		const photos = files.sort((a, b) =>
 			a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 		);
 
@@ -346,18 +437,15 @@
 		ocrPageProgress = '';
 		ocrLoading = true;
 		try {
-			const pageTexts = [];
-			for (let i = 0; i < pages.length; i++) {
-				ocrPageProgress = pages.length > 1 ? `Page ${i + 1} of ${pages.length}: ` : '';
-				const unicodeBraille = await runOcr(pages[i], {
-					onProgress: (stage) => {
-						ocrStage = stage;
-					}
-				});
-				pageTexts.push(unicodeBraille);
+			const pages = [];
+			for (let i = 0; i < photos.length; i++) {
+				const prefix = photos.length > 1 ? `Page ${i + 1} of ${photos.length}: ` : '';
+				pages.push(await readPhoto(photos[i], 'auto', prefix));
 			}
-			await sync.loadText(braille2Ascii(pageTexts.join('\n\n')));
-			filename = stripExtension(pages[0].name) + '.tex';
+			if (await loadOcrPages(pages)) {
+				ocrSummary = pages.map((p) => `${p.file.name} ${describeRotation(p.rotation)}.`).join(' ');
+				filename = stripExtension(photos[0].name) + '.tex';
+			}
 		} catch (err) {
 			ocrError = err?.message ?? 'OCR failed.';
 		} finally {
@@ -426,6 +514,37 @@
 					<p class="mt-1 text-sm text-red-500" role="alert">
 						{ocrError}
 					</p>
+				{/if}
+				<!-- Always in the DOM so that screen readers announce changes to it. -->
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300" role="status" aria-live="polite">
+					{ocrSummary}
+				</p>
+				{#if ocrPages.length}
+					<fieldset class="mt-2">
+						<legend class="text-sm font-medium text-gray-900 dark:text-white">
+							Photo orientation
+						</legend>
+						<p class="text-sm text-gray-500 dark:text-gray-300" id="rotate-help">
+							If a page reads as nonsense, rotate its photo. Each press turns it 90 degrees
+							clockwise and reads it again; press twice to turn it upside down.
+						</p>
+						<ul>
+							{#each ocrPages as page, i (i)}
+								<li class="mt-1 flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+									<button
+										type="button"
+										onclick={(event) => rotatePage(i, event.currentTarget)}
+										disabled={ocrLoading || pandocLoading}
+										aria-describedby="rotate-help"
+										class="cursor-pointer rounded-lg bg-gray-800 px-3 py-1 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-600"
+									>
+										Rotate {page.file.name}
+									</button>
+									<span>Currently {describeRotation(page.rotation)}.</span>
+								</li>
+							{/each}
+						</ul>
+					</fieldset>
 				{/if}
 			</div>
 			<div class="pb-4 px-4">

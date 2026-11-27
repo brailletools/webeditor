@@ -1,6 +1,6 @@
 // Dedicated Worker running the whole OCR pipeline off the main thread: decode
-// -> tiled/scale-normalized detection -> classification -> line/space layout
-// -> Unicode braille text. A single request/response per upload (unlike
+// -> orientation + tiled/scale-normalized detection -> classification ->
+// line/space layout -> Unicode braille text. A single request/response per upload (unlike
 // liblouis's long-lived easy-api.js worker, which needs its own callId
 // dispatch because liblouis's WASM API is synchronous-call-shaped) -- both
 // onnxruntime-web and @brailletools/brailleocr-web are already
@@ -9,7 +9,7 @@ import * as ort from 'onnxruntime-web';
 import {
 	CellDetector,
 	CellClassifier,
-	detectScaleNormalized,
+	readPage,
 	layoutCellsIntoLines,
 	layoutToUnicodeBraille
 } from '@brailletools/brailleocr-web';
@@ -42,7 +42,7 @@ function configureWasm() {
 }
 
 self.onmessage = async (event) => {
-	const { type, file, detectorUrl, classifierUrl, confThreshold } = event.data;
+	const { type, file, detectorUrl, classifierUrl, confThreshold, rotation } = event.data;
 	if (type !== 'run') return;
 
 	try {
@@ -51,22 +51,25 @@ self.onmessage = async (event) => {
 		self.postMessage({ type: 'progress', stage: 'decoding' });
 		const { rgb, width, height } = await decodeImageToRgbHwc(file);
 
-		self.postMessage({ type: 'progress', stage: 'detecting' });
 		detectorPromise ??= CellDetector.load(detectorUrl);
-		const detector = await detectorPromise;
-		const boxes = await detectScaleNormalized(detector, rgb, width, height, { confThreshold });
-
-		self.postMessage({ type: 'progress', stage: 'classifying' });
 		classifierPromise ??= CellClassifier.load(classifierUrl);
-		const classifier = await classifierPromise;
-		const bits = await classifier.classify(rgb, width, height, boxes);
+		const [detector, classifier] = await Promise.all([detectorPromise, classifierPromise]);
 
-		/** @type {Array<{cx: number, cy: number, w: number, h: number, bits: string}>} */
-		const cells = boxes.map((b, i) => ({ ...b, bits: bits[i] }));
+		const page = await readPage(
+			detector,
+			classifier,
+			{ rgb, width, height },
+			{
+				rotation,
+				confThreshold,
+				onStage: (/** @type {string} */ stage) => self.postMessage({ type: 'progress', stage })
+			}
+		);
+		const { cells } = page;
 		const lines = layoutCellsIntoLines(cells);
 		const unicodeBraille = layoutToUnicodeBraille(lines);
 
-		self.postMessage({ type: 'result', unicodeBraille });
+		self.postMessage({ type: 'result', unicodeBraille, rotation: page.rotation });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		self.postMessage({ type: 'error', message });

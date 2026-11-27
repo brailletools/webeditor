@@ -13,7 +13,9 @@ in Nemeth format. Try it at https://brailletools.org/
   paragraph/equation granularity, and anything that can't be synced is listed under "sync issues"
   with a link to jump to it.
 - **Upload** `.brf` / `.brl` (braille), `.md`, `.tex` and `.docx` (converted through Pandoc,
-  in your browser), or **photos of embossed braille pages** (read with OCR, entirely client-side).
+  in your browser), or **photos of embossed braille pages** (read with OCR, entirely client-side). The editor
+  works out which way up each photo is; if a page still reads as nonsense, use the **Rotate**
+  button that appears for each photo to turn it 90° and read it again.
 - **HTML preview** — switch the second pane to a read-only rendered view (math as MathML).
 - **Download** LaTeX, Markdown, or Word, or **Open HTML** for a preview in a new tab.
 - **Settings** — choose the braille table (the liblouis table used to translate between

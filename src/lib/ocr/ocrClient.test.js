@@ -45,9 +45,9 @@ describe('runOcr overlapping-call guard', () => {
 		expect(createdWorkers.length).toBe(1);
 
 		createdWorkers[0].dispatchEvent(
-			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'ABC' } })
+			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'ABC', rotation: 0 } })
 		);
-		await expect(first).resolves.toBe('ABC');
+		await expect(first).resolves.toEqual({ unicodeBraille: 'ABC', rotation: 0 });
 	});
 
 	test('a call is allowed again once the previous one resolves', async () => {
@@ -55,15 +55,17 @@ describe('runOcr overlapping-call guard', () => {
 
 		const first = runOcr(new File(['x'], 'a.png'));
 		createdWorkers[0].dispatchEvent(
-			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'ABC' } })
+			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'ABC', rotation: 0 } })
 		);
 		await first;
 
 		const second = runOcr(new File(['x'], 'b.png'));
 		createdWorkers[0].dispatchEvent(
-			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'DEF' } })
+			new MessageEvent('message', {
+				data: { type: 'result', unicodeBraille: 'DEF', rotation: 180 }
+			})
 		);
-		await expect(second).resolves.toBe('DEF');
+		await expect(second).resolves.toEqual({ unicodeBraille: 'DEF', rotation: 180 });
 	});
 
 	test('a call is allowed again once the previous one rejects (in-flight flag is cleared on error too)', async () => {
@@ -77,8 +79,25 @@ describe('runOcr overlapping-call guard', () => {
 
 		const second = runOcr(new File(['x'], 'b.png'));
 		createdWorkers[0].dispatchEvent(
-			new MessageEvent('message', { data: { type: 'result', unicodeBraille: 'DEF' } })
+			new MessageEvent('message', {
+				data: { type: 'result', unicodeBraille: 'DEF', rotation: 180 }
+			})
 		);
-		await expect(second).resolves.toBe('DEF');
+		await expect(second).resolves.toEqual({ unicodeBraille: 'DEF', rotation: 180 });
+	});
+});
+
+describe('runOcr rotation', () => {
+	test('asks for automatic orientation unless told otherwise', async () => {
+		const { runOcr } = await import('./ocrClient.js');
+
+		runOcr(new File(['x'], 'a.png'));
+		expect(createdWorkers[0].postMessage.mock.calls[0][0].rotation).toBe('auto');
+		createdWorkers[0].dispatchEvent(
+			new MessageEvent('message', { data: { type: 'result', unicodeBraille: '', rotation: 0 } })
+		);
+
+		runOcr(new File(['x'], 'a.png'), { rotation: 270 });
+		expect(createdWorkers[0].postMessage.mock.calls[1][0].rotation).toBe(270);
 	});
 });
