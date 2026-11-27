@@ -18,7 +18,14 @@ export default [
 	...svelte.configs.prettier,
 	{
 		languageOptions: {
-			globals: { ...globals.browser, ...globals.node }
+			globals: {
+				...globals.browser,
+				...globals.node,
+				// build-time constants, see vite.config.js
+				__APP_VERSION__: 'readonly',
+				__APP_COMMIT__: 'readonly',
+				__BRAILLE_BRIDGE_VERSION__: 'readonly'
+			}
 		}
 	},
 	{

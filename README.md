@@ -14,8 +14,10 @@ in Nemeth format. Try it at https://brailletools.org/
   with a link to jump to it.
 - **Upload** `.brf` / `.brl` (braille), `.md`, `.tex` and `.docx` (converted through Pandoc,
   in your browser), or **photos of embossed braille pages** (read with OCR, entirely client-side).
-- **Download** LaTeX, Markdown, or Word, or **Open HTML** for a preview.
-- **Braille table** — the liblouis table used to translate between braille and text.
+- **HTML preview** — switch the second pane to a read-only rendered view (math as MathML).
+- **Download** LaTeX, Markdown, or Word, or **Open HTML** for a preview in a new tab.
+- **Settings** — choose the braille table (the liblouis table used to translate between
+  braille and text) and read how to set up NVDA with a braille display.
 - **Treat each braille line as a paragraph** — a blank line starts a
   new paragraph and a single line break is just a wrapped line (right
   for hard-wrapped BRFs). Turn it on for files where every line is its

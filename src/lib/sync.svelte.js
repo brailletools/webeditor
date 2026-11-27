@@ -34,7 +34,10 @@ const DEBOUNCE_MS = 250;
 export function createSyncController({ table: initialTable, translate, translateForward } = {}) {
 	let table = initialTable;
 	const state = $state({
-		format: 'latex', // 'latex' | 'markdown' — which format the second pane shows
+		// Which format the second pane shows: 'latex' | 'markdown' | 'html'. 'html' is a
+		// read-only rendering of the LaTeX, published as previewLatex below.
+		format: 'latex',
+		previewLatex: '',
 		// false: a blank line ends a paragraph (single newlines are just wrapped lines,
 		// right for hard-wrapped BRFs). true: every braille line is its own paragraph,
 		// so no blank lines are needed -- see braille-bridge's lex() `linesAreParagraphs`.
@@ -109,6 +112,11 @@ export function createSyncController({ table: initialTable, translate, translate
 			: await targetDoc.renderLatex();
 	}
 
+	// In HTML view the page renders from this, since there's no pane to write HTML into.
+	function publishPreview(secondText) {
+		if (state.format === 'html') state.previewLatex = secondText;
+	}
+
 	// Every load (a braille upload, a Markdown/Word upload, a table change, the
 	// lines-are-paragraphs toggle) builds a new document asynchronously and then
 	// replaces the whole document and both panes with it. Two of those can overlap --
@@ -162,6 +170,7 @@ export function createSyncController({ table: initialTable, translate, translate
 		refreshIssues();
 		writeToPane(brailleEl, doc.brailleText);
 		writeToPane(secondEl, secondText);
+		publishPreview(secondText);
 		state.ready = true;
 		return 'committed';
 	}
@@ -241,7 +250,10 @@ export function createSyncController({ table: initialTable, translate, translate
 		if (newFormat === state.format) return;
 		state.format = newFormat;
 		if (!doc) return;
-		writeToPane(secondEl, await renderSecondPaneText(doc));
+		const secondText = await renderSecondPaneText(doc);
+		if (state.format !== newFormat) return; // switched again while rendering
+		writeToPane(secondEl, secondText);
+		publishPreview(secondText);
 	}
 
 	function handleBrailleInput(event) {
@@ -263,6 +275,7 @@ export function createSyncController({ table: initialTable, translate, translate
 				refreshIssues();
 				if (myRevision !== brailleRevision) return; // superseded by newer typing in this pane
 				deliverToSecond(secondText, secondCursor);
+				publishPreview(secondText);
 			});
 		}, DEBOUNCE_MS);
 	}

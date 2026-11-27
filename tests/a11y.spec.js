@@ -35,6 +35,7 @@ test.describe('Accessibility', () => {
 		await page.goto('/');
 		await waitForAppReady(page);
 
+		await page.getByRole('button', { name: 'Settings' }).click();
 		await page.locator('#braille-table').selectOption('en-ueb-g1.ctb');
 		await waitForAppReady(page);
 
@@ -116,6 +117,18 @@ test.describe('Accessibility', () => {
 				}
 			)
 			.catch(() => {});
+
+		const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+
+		expect(impactfulViolations(violations)).toEqual([]);
+	});
+
+	test('the HTML preview has no critical/serious violations', async ({ page }) => {
+		await page.goto('/');
+		await waitForAppReady(page);
+
+		await page.selectOption('#second-pane-format', 'html');
+		await expect(page.getByTestId('html-preview')).not.toBeEmpty();
 
 		const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
 

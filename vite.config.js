@@ -2,8 +2,23 @@ import tailwindcss from '@tailwindcss/vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { readFileSync } from 'node:fs';
+
+/** @param {string} path relative to this file */
+const versionOf = (path) =>
+	JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).version;
 
 export default defineConfig({
+	// Shown in the page footer, so anyone can tell which release the site is running.
+	// braille-bridge's is read from the installed package -- what actually gets built --
+	// rather than from braille-bridge.version, which only says what CI was asked to clone.
+	define: {
+		__APP_VERSION__: JSON.stringify(versionOf('./package.json')),
+		__APP_COMMIT__: JSON.stringify((process.env.GITHUB_SHA ?? '').slice(0, 7)),
+		__BRAILLE_BRIDGE_VERSION__: JSON.stringify(
+			versionOf('./node_modules/@brailletools/braille-bridge/package.json')
+		)
+	},
 	plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
 	// pandoc-wasm's browser entry does a bare `import('./pandoc.wasm')` — per
 	// its own README's Vite guidance, this makes Vite treat *.wasm as a static

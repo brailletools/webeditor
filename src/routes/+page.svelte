@@ -19,6 +19,8 @@
 	import { runOcr } from '$lib/ocr/ocrClient.js';
 	import { createSyncController } from '$lib/sync.svelte.js';
 	import SyncIssues from '$lib/components/SyncIssues.svelte';
+	import SettingsDialog from '$lib/components/SettingsDialog.svelte';
+	import HtmlPreview from '$lib/components/HtmlPreview.svelte';
 
 	import { base } from '$app/paths';
 
@@ -58,6 +60,10 @@
 
 	let brailleEl = $state(null);
 	let secondEl = $state(null);
+	let previewEl = $state();
+
+	const formatLabels = { latex: 'LaTeX', markdown: 'Markdown', html: 'HTML preview' };
+	let formatLabel = $derived(formatLabels[selectedFormat]);
 
 	// Only used as the initial table before the first load — intentionally not
 	// reactive; later table changes go through handleTableChange() -> loadText(),
@@ -123,6 +129,11 @@
 	function handleJumpShortcut(event, fromPane) {
 		if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== 'j') return;
 		event.preventDefault();
+		// The HTML view has no text cursor to map to, so just move between the panes.
+		if (selectedFormat === 'html') {
+			(fromPane === 'braille' ? previewEl : brailleEl)?.focus();
+			return;
+		}
 		sync.jumpToOtherPane(fromPane);
 	}
 
@@ -364,7 +375,16 @@
 			class="p-3 border border-gray-100 rounded-lg shadow-lg dark:border-gray-700 dark:bg-gray-800"
 		>
 			<div class="pb-4 px-4">
-				<h3 class="text-3xl dark:text-gray-100">File Upload</h3>
+				<div class="flex items-center justify-between gap-2">
+					<h3 class="text-3xl dark:text-gray-100">File Upload</h3>
+					<SettingsDialog
+						tables={brailleTables}
+						bind:selectedTable
+						onTableChange={handleTableChange}
+						tableDisabled={!sync.state.ready}
+						loadError={sync.state.loadError}
+					/>
+				</div>
 
 				<label
 					id="braille-file-label"
@@ -410,25 +430,6 @@
 			</div>
 			<div class="pb-4 px-4">
 				<label
-					for="braille-table"
-					class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Braille table</label
-				>
-				<select
-					id="braille-table"
-					bind:value={selectedTable}
-					onchange={handleTableChange}
-					class="block w-96 text-sm bg-gray-50 dark:bg-gray-950 dark:text-gray-100 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2"
-				>
-					{#each brailleTables as table (table.value)}
-						<option value={table.value}>{table.label}</option>
-					{/each}
-				</select>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-300">
-					Used for translation between braille and LaTeX.
-				</p>
-			</div>
-			<div class="pb-4 px-4">
-				<label
 					for="lines-are-paragraphs"
 					class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white"
 				>
@@ -464,27 +465,6 @@
 			<div class="flex flex-col lg:flex-row">
 				<div class="p-4 flex-1 min-w-0">
 					<h3 class="text-3xl dark:text-gray-100 mb-2">Braille (NABCC)</h3>
-					<details class="mb-2 text-sm text-gray-500 dark:text-gray-300">
-						<summary class="cursor-pointer font-medium text-gray-900 dark:text-white">
-							Using NVDA with a braille display?
-						</summary>
-						<div class="mt-1 space-y-1">
-							<p>
-								This field uses NABCC ("English North American Braille Computer Code") — plain ASCII
-								text, one letter/symbol per braille cell. NABCC is the same encoding BRF files use,
-								and NVDA ships a working input/output table for it.
-							</p>
-							<p>To read and type braille correctly here with NVDA and a braille display:</p>
-							<ol class="list-decimal list-inside">
-								<li>Open the NVDA menu → Preferences → Settings → Braille.</li>
-								<li>
-									Set <strong>Input table</strong> to "English North American Braille Computer Code (NABCC)
-									(en-nabcc.utb)".
-								</li>
-								<li>Set <strong>Output table</strong> to the same table.</li>
-							</ol>
-						</div>
-					</details>
 					<textarea
 						id="braille-text"
 						bind:this={brailleEl}
@@ -494,16 +474,16 @@
 						onkeydown={(e) => handleJumpShortcut(e, 'braille')}
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
 						placeholder="Enter NABCC braille text here or upload a file..."
-						aria-label="Braille (NABCC) input, editable. Press Control+Alt+J to jump to the corresponding location in the {selectedFormat ===
-						'markdown'
-							? 'Markdown'
-							: 'LaTeX'} pane."
+						aria-label="Braille (NABCC) input, editable. Press Control+Alt+J to jump to {selectedFormat ===
+						'html'
+							? 'the HTML preview'
+							: `the corresponding location in the ${formatLabel} pane`}."
 					></textarea>
 				</div>
 				<div class="p-4 flex-1 min-w-0">
 					<div class="flex items-center justify-between gap-2 mb-2">
 						<h3 class="text-3xl dark:text-gray-100">
-							{selectedFormat === 'markdown' ? 'Markdown' : 'LaTeX'}
+							{formatLabel}
 						</h3>
 						<div>
 							<label for="second-pane-format" class="sr-only">Second pane format</label>
@@ -516,24 +496,30 @@
 							>
 								<option value="latex">LaTeX</option>
 								<option value="markdown">Markdown</option>
+								<option value="html">HTML preview</option>
 							</select>
 						</div>
 					</div>
+					{#if selectedFormat === 'html'}
+						<HtmlPreview
+							latex={sync.state.previewLatex}
+							bind:element={previewEl}
+							onkeydown={(e) => handleJumpShortcut(e, 'second')}
+						/>
+					{/if}
+					<!-- Stays in the page (hidden) in HTML view: the sync controller holds a reference. -->
 					<textarea
 						id="second-pane-output"
 						data-testid="second-pane-output"
 						bind:this={secondEl}
+						hidden={selectedFormat === 'html'}
 						disabled={!sync.state.ready}
 						oninput={sync.handleSecondInput}
 						onblur={sync.handleSecondBlur}
 						onkeydown={(e) => handleJumpShortcut(e, 'second')}
 						class="font-mono bg-gray-900 text-gray-100 rounded-lg p-2.5 whitespace-pre w-full h-96 resize-none overflow-y-auto disabled:opacity-50"
-						placeholder="{selectedFormat === 'markdown'
-							? 'Markdown'
-							: 'LaTeX'} will appear here once the braille pane has content..."
-						aria-label="{selectedFormat === 'markdown'
-							? 'Markdown'
-							: 'LaTeX'} input, editable. Press Control+Alt+J to jump to the corresponding location in the braille pane."
+						placeholder="{formatLabel} will appear here once the braille pane has content..."
+						aria-label="{formatLabel} input, editable. Press Control+Alt+J to jump to the corresponding location in the braille pane."
 					></textarea>
 				</div>
 			</div>
@@ -549,7 +535,7 @@
 				</p>
 				<SyncIssues
 					issues={sync.state.issues}
-					secondPaneLabel={selectedFormat === 'markdown' ? 'Markdown' : 'LaTeX'}
+					secondPaneLabel={formatLabel}
 					onGoTo={(issue) => sync.focusNode(issue.pane, issue.range, issue.brailleRange)}
 				/>
 			</div>
@@ -686,6 +672,10 @@
 					class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline"
 					>View on GitHub</a
 				>
+				<p class="mt-1" data-testid="version-info">
+					Web editor {__APP_VERSION__}{__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''} · braille-bridge
+					{__BRAILLE_BRIDGE_VERSION__}
+				</p>
 			</footer>
 		</div>
 	</div>

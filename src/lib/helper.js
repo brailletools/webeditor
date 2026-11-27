@@ -73,6 +73,120 @@ export function downloadBlob(blob, filename) {
 	URL.revokeObjectURL(url);
 }
 
+// Attributes that make the browser fetch or run something on their own.
+const LOADING_ATTRIBUTES = new Set([
+	'src',
+	'srcset',
+	'srcdoc',
+	'poster',
+	'background',
+	'data',
+	'ping',
+	'action',
+	'formaction'
+]);
+// Inline CSS that can fetch something. Backslashes are rejected too, since CSS escapes
+// can spell `url` in ways a pattern won't recognise.
+const LOADING_CSS = /url|image|@import|\\/i;
+
+/**
+ * Strips anything that could run script or contact another server from converted HTML.
+ * The source document is user-supplied (e.g. an uploaded file), and the result is
+ * inserted into this page. Ordinary inline styles are kept (the converter uses them for
+ * layout), as are web links, which only load if the reader follows them.
+ * @param {DocumentFragment} root
+ */
+function removeActiveContent(root) {
+	root
+		.querySelectorAll('script, style, iframe, object, embed, link, meta, base, form')
+		.forEach((node) => node.remove());
+	root.querySelectorAll('*').forEach((node) => {
+		for (const { name, value } of Array.from(node.attributes)) {
+			const isHref = name === 'href' || name === 'xlink:href';
+			// An href anywhere but <a> (e.g. SVG <image>/<use>) loads its target.
+			const safeLink = node.localName === 'a' && /^(https?:|mailto:|#)/i.test(value.trim());
+			if (
+				name.startsWith('on') ||
+				LOADING_ATTRIBUTES.has(name) ||
+				(isHref && !safeLink) ||
+				(name === 'style' && LOADING_CSS.test(value))
+			) {
+				node.removeAttribute(name);
+			}
+		}
+	});
+}
+
+/**
+ * Converts a complete LaTeX document to an HTML body fragment (math as MathML) with
+ * latex.js. All processing happens in the browser—no external API calls.
+ * @param {string} latexContent - Complete LaTeX document (e.g. from wrapLatexDocument())
+ * @returns {string}
+ * @throws {Error} if conversion fails
+ */
+export function latexToHtml(latexContent) {
+	// Get latex.js from global window (loaded via CDN in app.html)
+	// The CDN exposes it as 'latexjs' (all lowercase)
+	if (!win.latexjs) {
+		throw new Error('LaTeX.js library not loaded. Expected win.latexjs to be available.');
+	}
+
+	// Extract just the document body for browser rendering
+	// latex.js can't handle some packages, so strip them out
+	const bodyMatch = latexContent.match(/\\begin\{document\}([\s\S]*?)\\end\{document\}/);
+	const bodyContent = bodyMatch ? bodyMatch[1].trim() : latexContent;
+	const browserLatex = wrapLatexDocumentForBrowser(bodyContent);
+
+	// Create a new HtmlGenerator and use it to parse and generate HTML
+	// latex.js API: create generator, then parse with it
+	const generator = new win.latexjs.HtmlGenerator({ hyphenate: false });
+	win.latexjs.parse(browserLatex, { generator });
+
+	// The parse returns a DOM node tree - we need to serialize it to HTML
+	// The generator has the htmlDocument property with the full document
+	const htmlDoc = generator.htmlDocument();
+
+	// Get the body innerHTML, but remove any duplicate content or source code annotations
+	let html = htmlDoc.body.innerHTML;
+
+	// latex.js/KaTeX emits both visual HTML and MathML. Replace each KaTeX block
+	// with only its MathML subtree so exported HTML is MathML-only.
+	// A <template>'s content is inert: nothing in it loads or runs while we clean it up.
+	const template = document.createElement('template');
+	template.innerHTML = html;
+	const htmlContainer = template.content;
+
+	const katexNodes = htmlContainer.querySelectorAll('.katex');
+	katexNodes.forEach((katexNode) => {
+		const mathmlNode = katexNode.querySelector('.katex-mathml');
+		if (!mathmlNode) {
+			return;
+		}
+
+		const fragment = document.createDocumentFragment();
+		Array.from(mathmlNode.childNodes).forEach((child) => {
+			fragment.appendChild(child.cloneNode(true));
+		});
+		katexNode.replaceWith(fragment);
+	});
+
+	// Also remove any pre elements that contain source code (they'll have the LaTeX source)
+	const preElements = htmlContainer.querySelectorAll('pre');
+	preElements.forEach((pre) => {
+		const text = pre.textContent || pre.innerText || '';
+		// If the pre contains LaTeX commands, it's probably the source code
+		if (text.includes('\\') || text.includes('documentclass')) {
+			pre.remove();
+		}
+	});
+
+	removeActiveContent(htmlContainer);
+
+	html = template.innerHTML;
+
+	return html;
+}
+
 /**
  * Converts a complete LaTeX document to HTML using latex.js and opens it in a new tab.
  * All processing happens in the browser—no external API calls.
@@ -82,60 +196,7 @@ export function downloadBlob(blob, filename) {
  */
 export async function compileToHTML(latexContent) {
 	try {
-		// Get latex.js from global window (loaded via CDN in app.html)
-		// The CDN exposes it as 'latexjs' (all lowercase)
-		if (!win.latexjs) {
-			throw new Error('LaTeX.js library not loaded. Expected win.latexjs to be available.');
-		}
-
-		// Extract just the document body for browser rendering
-		// latex.js can't handle some packages, so strip them out
-		const bodyMatch = latexContent.match(/\\begin\{document\}([\s\S]*?)\\end\{document\}/);
-		const bodyContent = bodyMatch ? bodyMatch[1].trim() : latexContent;
-		const browserLatex = wrapLatexDocumentForBrowser(bodyContent);
-
-		// Create a new HtmlGenerator and use it to parse and generate HTML
-		// latex.js API: create generator, then parse with it
-		const generator = new win.latexjs.HtmlGenerator({ hyphenate: false });
-		win.latexjs.parse(browserLatex, { generator });
-
-		// The parse returns a DOM node tree - we need to serialize it to HTML
-		// The generator has the htmlDocument property with the full document
-		const htmlDoc = generator.htmlDocument();
-
-		// Get the body innerHTML, but remove any duplicate content or source code annotations
-		let html = htmlDoc.body.innerHTML;
-
-		// latex.js/KaTeX emits both visual HTML and MathML. Replace each KaTeX block
-		// with only its MathML subtree so exported HTML is MathML-only.
-		const htmlContainer = document.createElement('div');
-		htmlContainer.innerHTML = html;
-
-		const katexNodes = htmlContainer.querySelectorAll('.katex');
-		katexNodes.forEach((katexNode) => {
-			const mathmlNode = katexNode.querySelector('.katex-mathml');
-			if (!mathmlNode) {
-				return;
-			}
-
-			const fragment = document.createDocumentFragment();
-			Array.from(mathmlNode.childNodes).forEach((child) => {
-				fragment.appendChild(child.cloneNode(true));
-			});
-			katexNode.replaceWith(fragment);
-		});
-
-		// Also remove any pre elements that contain source code (they'll have the LaTeX source)
-		const preElements = htmlContainer.querySelectorAll('pre');
-		preElements.forEach((pre) => {
-			const text = pre.textContent || pre.innerText || '';
-			// If the pre contains LaTeX commands, it's probably the source code
-			if (text.includes('\\') || text.includes('documentclass')) {
-				pre.remove();
-			}
-		});
-
-		html = htmlContainer.innerHTML;
+		const html = latexToHtml(latexContent);
 
 		// Wrap in a complete HTML document
 		const fullHtml = `<!DOCTYPE html>
