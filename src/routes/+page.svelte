@@ -381,7 +381,7 @@
 						tables={brailleTables}
 						bind:selectedTable
 						onTableChange={handleTableChange}
-						disabled={!sync.state.ready}
+						tableDisabled={!sync.state.ready}
 						loadError={sync.state.loadError}
 					/>
 				</div>

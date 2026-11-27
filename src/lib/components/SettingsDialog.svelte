@@ -2,11 +2,13 @@
 	// Settings popup. A native <dialog> opened with showModal() gives the accessible
 	// behaviour for free: focus moves in and is contained, Escape closes it, the rest of
 	// the page is inert, and focus returns to the Settings button afterwards.
+	// The button itself is never disabled: the NVDA instructions must stay reachable even
+	// while the braille table can't be changed (e.g. if liblouis fails to start).
 	let {
 		tables,
 		selectedTable = $bindable(),
 		onTableChange,
-		disabled = false,
+		tableDisabled = false,
 		loadError = ''
 	} = $props();
 
@@ -18,7 +20,9 @@
 	type="button"
 	id="settings-button"
 	aria-haspopup="dialog"
-	onclick={() => dialog?.showModal()}
+	onclick={() => {
+		if (!dialog?.open) dialog?.showModal();
+	}}
 	class="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-800"
 >
 	Settings
@@ -37,7 +41,7 @@
 		id="braille-table"
 		bind:value={selectedTable}
 		onchange={onTableChange}
-		{disabled}
+		disabled={tableDisabled}
 		aria-describedby="braille-table-help"
 		class="block w-full text-sm bg-gray-50 dark:bg-gray-950 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 disabled:opacity-50"
 	>

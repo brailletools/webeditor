@@ -73,10 +73,27 @@ export function downloadBlob(blob, filename) {
 	URL.revokeObjectURL(url);
 }
 
+// Attributes that make the browser fetch or run something on their own.
+const LOADING_ATTRIBUTES = new Set([
+	'src',
+	'srcset',
+	'srcdoc',
+	'poster',
+	'background',
+	'data',
+	'ping',
+	'action',
+	'formaction'
+]);
+// Inline CSS that can fetch something. Backslashes are rejected too, since CSS escapes
+// can spell `url` in ways a pattern won't recognise.
+const LOADING_CSS = /url|image|@import|\\/i;
+
 /**
- * Strips anything that could run script from converted HTML. The source document is
- * user-supplied (e.g. an uploaded file with a `\href{javascript:...}`), and the result is
- * inserted into this page.
+ * Strips anything that could run script or contact another server from converted HTML.
+ * The source document is user-supplied (e.g. an uploaded file), and the result is
+ * inserted into this page. Ordinary inline styles are kept (the converter uses them for
+ * layout), as are web links, which only load if the reader follows them.
  * @param {DocumentFragment} root
  */
 function removeActiveContent(root) {
@@ -85,8 +102,15 @@ function removeActiveContent(root) {
 		.forEach((node) => node.remove());
 	root.querySelectorAll('*').forEach((node) => {
 		for (const { name, value } of Array.from(node.attributes)) {
-			const isLink = ['href', 'src', 'xlink:href', 'action', 'formaction'].includes(name);
-			if (name.startsWith('on') || (isLink && !/^(https?:|mailto:|#)/i.test(value.trim()))) {
+			const isHref = name === 'href' || name === 'xlink:href';
+			// An href anywhere but <a> (e.g. SVG <image>/<use>) loads its target.
+			const safeLink = node.localName === 'a' && /^(https?:|mailto:|#)/i.test(value.trim());
+			if (
+				name.startsWith('on') ||
+				LOADING_ATTRIBUTES.has(name) ||
+				(isHref && !safeLink) ||
+				(name === 'style' && LOADING_CSS.test(value))
+			) {
 				node.removeAttribute(name);
 			}
 		}
