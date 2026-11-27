@@ -534,10 +534,10 @@
 									<button
 										type="button"
 										onclick={(event) => rotatePage(i, event.currentTarget)}
-													disabled={ocrLoading || pandocLoading}
-														aria-busy={ocrLoading || pandocLoading}
-														aria-describedby="rotate-help"
-														class="cursor-pointer rounded-lg bg-gray-800 px-3 py-1 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-600"
+										disabled={ocrLoading || pandocLoading}
+										aria-busy={ocrLoading || pandocLoading}
+										aria-describedby="rotate-help"
+										class="cursor-pointer rounded-lg bg-gray-800 px-3 py-1 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-600"
 									>
 										Rotate {page.file.name}
 									</button>
